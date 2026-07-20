@@ -9,7 +9,7 @@ let package = Package(
         .library(name: "SQL Postgres Provider", targets: ["SQL Postgres Provider"])
     ],
     dependencies: [
-        .package(path: "../swift-sql"),
+        .package(url: "https://github.com/swift-foundations/swift-sql.git", branch: "main"),
         .package(url: "https://github.com/swift-ietf/swift-rfc-4122.git", branch: "main"),
         .package(url: "https://github.com/swift-primitives/swift-time-primitives.git", branch: "main")
     ],

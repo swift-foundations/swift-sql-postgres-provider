@@ -11,3 +11,26 @@ TLS, DNS/IPv6 address resolution, prepared-statement caching, reconnect policy,
 and multi-writer coordination are not part of this package. The provider
 preserves the `SQL.Database` transaction and rollback contract; the control
 plane remains the single kernel owner and writer.
+
+## Installation
+
+Add the package to your `Package.swift` dependencies:
+
+```swift
+.package(url: "https://github.com/swift-foundations/swift-sql-postgres-provider.git", branch: "main")
+```
+
+Then add the product to your target's dependencies:
+
+```swift
+.target(
+    name: "YourTarget",
+    dependencies: [
+        .product(name: "SQL Postgres Provider", package: "swift-sql-postgres-provider")
+    ]
+)
+```
+
+## License
+
+Apache 2.0. See [LICENSE](LICENSE.md).

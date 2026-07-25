@@ -1,0 +1,9 @@
+# .github/metadata.yaml
+description: "Institute-native PostgreSQL provider for swift-sql."
+topics:
+  - foundations
+  - sql
+  - postgresql
+homepage: "https://swift-institute.org"
+readme:
+  family: E

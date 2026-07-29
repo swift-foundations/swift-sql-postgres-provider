@@ -19,8 +19,8 @@ import Testing
         )
     }
 
-    private func session(_ inbound: [[UInt8]]) throws -> (Postgres.Session<MemoryTransport>, MemoryTransport) {
-        let transport = MemoryTransport(inbound: inbound.flatMap { $0 })
+    private func session(_ inbound: [[UInt8]]) throws -> (Postgres.Session<Memory.Transport>, Memory.Transport) {
+        let transport = Memory.Transport(inbound: inbound.flatMap { $0 })
         return (Postgres.Session(configuration: try configuration(), transport: transport), transport)
     }
 

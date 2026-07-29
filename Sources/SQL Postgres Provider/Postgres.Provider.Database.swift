@@ -4,7 +4,7 @@ extension Postgres {
     /// A lazily connected, bounded pool of native PostgreSQL sessions.
     public actor Database: SQL.Database {
         private let configuration: Postgres.Configuration
-        private var available: [Session<Postgres.SocketTransport>] = []
+        private var available: [Session<Postgres.Socket.Transport>] = []
         private var created = 0
         private var closed = false
 
@@ -27,7 +27,7 @@ extension Postgres {
             // swiftlint:disable:next no_any_protocol_existential
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
-            try await withLease { (session: Session<Postgres.SocketTransport>) throws(SQL.Error) -> Value in
+            try await withLease { (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
                 try await body(Postgres.Connection(session: session))
             }
         }
@@ -37,7 +37,7 @@ extension Postgres {
             // swiftlint:disable:next no_any_protocol_existential
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
-            try await withLease { (session: Session<Postgres.SocketTransport>) throws(SQL.Error) -> Value in
+            try await withLease { (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
                 try await self.begin(session)
                 do throws(SQL.Error) {
                     let value = try await body(Postgres.Connection(session: session))
@@ -55,7 +55,7 @@ extension Postgres {
             // swiftlint:disable:next no_any_protocol_existential
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
-            try await withLease { (session: Session<Postgres.SocketTransport>) throws(SQL.Error) -> Value in
+            try await withLease { (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
                 try await self.begin(session)
                 do throws(SQL.Error) {
                     let value = try await body(Postgres.Connection(session: session))
@@ -68,7 +68,7 @@ extension Postgres {
             }
         }
 
-        private func command(_ session: Session<Postgres.SocketTransport>, _ sql: String) async throws(SQL.Error) {
+        private func command(_ session: Session<Postgres.Socket.Transport>, _ sql: String) async throws(SQL.Error) {
             do throws(Postgres.Error) {
                 _ = try await session.execute(sql: sql)
             } catch {
@@ -76,22 +76,22 @@ extension Postgres {
             }
         }
 
-        private func begin(_ session: Session<Postgres.SocketTransport>) async throws(SQL.Error) {
+        private func begin(_ session: Session<Postgres.Socket.Transport>) async throws(SQL.Error) {
             try await command(session, "BEGIN")
         }
 
-        private func rollback(_ session: Session<Postgres.SocketTransport>) async {
+        private func rollback(_ session: Session<Postgres.Socket.Transport>) async {
             do throws(SQL.Error) { try await command(session, "ROLLBACK") } catch {}
         }
 
-        private func acquire() async throws(SQL.Error) -> Session<Postgres.SocketTransport> {
+        private func acquire() async throws(SQL.Error) -> Session<Postgres.Socket.Transport> {
             while true {
                 guard closed == false else { throw .connection("database is shut down") }
                 if let session = available.popLast() { return session }
                 if created < configuration.maxConnections {
                     created += 1
                     do throws(Postgres.Error) {
-                        return try Session<Postgres.SocketTransport>(configuration: configuration)
+                        return try Session<Postgres.Socket.Transport>(configuration: configuration)
                     } catch {
                         created -= 1
                         throw error.sql
@@ -103,7 +103,7 @@ extension Postgres {
         }
 
         private func withLease<Value: Sendable>(
-            _ body: @Sendable (Session<Postgres.SocketTransport>) async throws(SQL.Error) -> Value
+            _ body: @Sendable (Session<Postgres.Socket.Transport>) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
             let session = try await acquire()
             do throws(SQL.Error) {

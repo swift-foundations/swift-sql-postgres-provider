@@ -29,6 +29,11 @@ extension Postgres {
 }
 
 extension Postgres {
+    /// Namespace for the socket-backed transport.
+    enum Socket {}
+}
+
+extension Postgres.Socket {
     /// A ``Postgres/Transport`` over a blocking IPv4 TCP socket.
     ///
     /// This is the only type in the package that names the kernel. It is deliberately the whole
@@ -39,7 +44,7 @@ extension Postgres {
     /// Known limitations, all of them this type's rather than the protocol's: IPv4 literals only
     /// (no DNS, no IPv6), no TLS, and `connect` without `EINTR` completion —
     /// see swift-institute/Issues#60.
-    final class SocketTransport: @unchecked Sendable, Transport {
+    final class Transport: @unchecked Sendable, Postgres.Transport {
         private var descriptor: Int32
         private var closed = false
 

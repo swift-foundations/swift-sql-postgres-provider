@@ -3,9 +3,9 @@ public import SQL
 extension Postgres {
     /// The engine-free connection handle backed by one native PostgreSQL session.
     public struct Connection: SQL.Connection {
-        private let session: Session<Postgres.SocketTransport>
+        private let session: Session<Postgres.Socket.Transport>
 
-        init(session: Session<Postgres.SocketTransport>) { self.session = session }
+        init(session: Session<Postgres.Socket.Transport>) { self.session = session }
 
         public func execute(_ statement: some SQL.Statement) async throws(SQL.Error) -> Int {
             do throws(Postgres.Error) {

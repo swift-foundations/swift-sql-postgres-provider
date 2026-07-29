@@ -9,32 +9,36 @@ import SQL
 /// environment variables. Before the split, the only tests that reached that code were the
 /// three `Integration` ones, every one of which returns early unless four
 /// `POSTGRES_NATIVE_TEST_*` variables are set, and which have therefore never run.
-final class MemoryTransport: Postgres.Transport, @unchecked Sendable {
-    /// Bytes the backend "sends", consumed in order by `readExact`.
-    private let inbound: [UInt8]
-    private var offset = 0
-    /// Everything the session wrote, in order.
-    private(set) var written: [UInt8] = []
-    private(set) var isClosed = false
+enum Memory {}
 
-    init(inbound: [UInt8]) {
-        self.inbound = inbound
-    }
+extension Memory {
+    final class Transport: Postgres.Transport, @unchecked Sendable {
+        /// Bytes the backend "sends", consumed in order by `readExact`.
+        private let inbound: [UInt8]
+        private var offset = 0
+        /// Everything the session wrote, in order.
+        private(set) var written: [UInt8] = []
+        private(set) var isClosed = false
 
-    /// Reading past the end models the peer hanging up, which is what a real socket reports.
-    func readExact(_ count: Int) throws(Postgres.Error) -> [UInt8] {
-        guard count >= 0 else { throw .protocolViolation("negative read length") }
-        guard offset + count <= inbound.count else { throw .connection("peer closed the connection") }
-        defer { offset += count }
-        return Array(inbound[offset..<(offset + count)])
-    }
+        init(inbound: [UInt8]) {
+            self.inbound = inbound
+        }
 
-    func writeAll(_ bytes: [UInt8]) throws(Postgres.Error) {
-        written.append(contentsOf: bytes)
-    }
+        /// Reading past the end models the peer hanging up, which is what a real socket reports.
+        func readExact(_ count: Int) throws(Postgres.Error) -> [UInt8] {
+            guard count >= 0 else { throw .protocolViolation("negative read length") }
+            guard offset + count <= inbound.count else { throw .connection("peer closed the connection") }
+            defer { offset += count }
+            return Array(inbound[offset..<(offset + count)])
+        }
 
-    func close() {
-        isClosed = true
+        func writeAll(_ bytes: [UInt8]) throws(Postgres.Error) {
+            written.append(contentsOf: bytes)
+        }
+
+        func close() {
+            isClosed = true
+        }
     }
 }
 

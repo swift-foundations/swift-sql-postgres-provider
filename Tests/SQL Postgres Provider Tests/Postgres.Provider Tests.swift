@@ -144,7 +144,7 @@ private func environment(_ name: String) -> String? {
             Backend.authenticationOk, Backend.readyForQuery,
             Backend.commandComplete("SELECT 0"), Backend.readyForQuery,
         ].flatMap { $0 }
-        let transport = MemoryTransport(inbound: inbound)
+        let transport = Memory.Transport(inbound: inbound)
         let configuration = try Postgres.Configuration(
             host: "127.0.0.1",
             port: 5432,

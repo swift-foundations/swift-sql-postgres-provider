@@ -10,7 +10,7 @@ extension Postgres {
     /// transport rather than only against a live server.
     ///
     /// Generic over its transport rather than holding `any Postgres.Transport`: the transport is
-    /// chosen statically at every call site — `SocketTransport` in production, the in-memory
+    /// chosen statically at every call site — `Socket.Transport` in production, the in-memory
     /// double in tests — so there is nothing for an existential to buy here.
     actor Session<Wire: Postgres.Transport> {
         private let configuration: Postgres.Configuration
@@ -382,12 +382,12 @@ extension SQL.Value {
     fileprivate var text: String { SQLValueText(self) }
 }
 
-extension Postgres.Session where Wire == Postgres.SocketTransport {
+extension Postgres.Session where Wire == Postgres.Socket.Transport {
     /// Opens a socket to the configured server and runs the wire protocol over it.
     init(configuration: Postgres.Configuration) throws(Postgres.Error) {
         self.init(
             configuration: configuration,
-            transport: try Postgres.SocketTransport(configuration: configuration)
+            transport: try Postgres.Socket.Transport(configuration: configuration)
         )
     }
 }

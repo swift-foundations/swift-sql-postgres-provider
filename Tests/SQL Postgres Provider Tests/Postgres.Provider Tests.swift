@@ -132,45 +132,76 @@ private func environment(_ name: String) -> String? {
 }
 
 @Suite struct `Array Literal Test` {
-    @Test func `renders a flat array as a braced comma-separated literal`() {
-        #expect(arrayLiteral([.int(1), .int(2), .int(3)]) == "{\"1\",\"2\",\"3\"}")
+    /// Runs one binding through the real Bind message and returns the bytes actually put on the
+    /// wire for it. This goes through `execute` rather than calling the encoder directly, so the
+    /// encoders stay `private` and the assertion is about wire output rather than an internal
+    /// helper.
+    private func boundPayload(_ value: SQL.Value) async throws -> String {
+        let inbound = [
+            Backend.authenticationOk, Backend.readyForQuery,
+            Backend.commandComplete("SELECT 0"), Backend.readyForQuery,
+        ].flatMap { $0 }
+        let transport = MemoryTransport(inbound: inbound)
+        let configuration = try Postgres.Configuration(
+            host: "127.0.0.1", port: 5432, database: "d", user: "u", password: nil, maxConnections: 1
+        )
+        let session = Postgres.Session(configuration: configuration, transport: transport)
+        _ = try await session.execute(sql: "SELECT $1", bindings: [value])
+
+        let written = transport.written
+        // Bind is tag 66. Its body is two empty C strings, then int16 format-count, int16
+        // format, int16 parameter-count, then int32 length + bytes for the single parameter.
+        guard let start = written.firstIndex(of: 66) else {
+            throw Postgres.Error.protocolViolation("no Bind message was written")
+        }
+        let body = start + 5
+        let lengthOffset = body + 8
+        let length = Int(written[lengthOffset]) << 24 | Int(written[lengthOffset + 1]) << 16
+            | Int(written[lengthOffset + 2]) << 8 | Int(written[lengthOffset + 3])
+        guard length >= 0 else { throw Postgres.Error.protocolViolation("null bound") }
+        let payload = written[(lengthOffset + 4)..<(lengthOffset + 4 + length)]
+        return String(decoding: payload, as: UTF8.self)
     }
 
-    @Test func `renders an empty array`() {
-        #expect(arrayLiteral([]) == "{}")
+    @Test func `binds a flat array as a braced comma-separated literal`() async throws {
+        #expect(try await boundPayload(.array([.int(1), .int(2), .int(3)])) == "{\"1\",\"2\",\"3\"}")
+    }
+
+    @Test func `binds an empty array`() async throws {
+        #expect(try await boundPayload(.array([])) == "{}")
     }
 
     /// A bare `NULL` is the only way to express a null element; a quoted `"NULL"` is the
     /// four-character string, which is why the two must not render alike.
-    @Test func `distinguishes a null element from the literal text NULL`() {
-        #expect(arrayLiteral([.null, .text("NULL")]) == "{NULL,\"NULL\"}")
+    @Test func `distinguishes a null element from the literal text NULL`() async throws {
+        #expect(try await boundPayload(.array([.null, .text("NULL")])) == "{NULL,\"NULL\"}")
     }
 
     /// Unquoted, each of these would change the array's shape rather than its contents.
-    @Test func `quotes elements containing delimiters`() {
-        #expect(arrayLiteral([.text("a,b")]) == "{\"a,b\"}")
-        #expect(arrayLiteral([.text("{x}")]) == "{\"{x}\"}")
-        #expect(arrayLiteral([.text(" padded ")]) == "{\" padded \"}")
-        #expect(arrayLiteral([.text("")]) == "{\"\"}")
+    @Test func `quotes elements containing delimiters`() async throws {
+        #expect(try await boundPayload(.array([.text("a,b")])) == "{\"a,b\"}")
+        #expect(try await boundPayload(.array([.text("{x}")])) == "{\"{x}\"}")
+        #expect(try await boundPayload(.array([.text(" padded ")])) == "{\" padded \"}")
+        #expect(try await boundPayload(.array([.text("")])) == "{\"\"}")
     }
 
-    @Test func `escapes backslash and double quote inside an element`() {
-        #expect(arrayLiteral([.text("he said \"hi\"")]) == "{\"he said \\\"hi\\\"\"}")
-        #expect(arrayLiteral([.text("back\\slash")]) == "{\"back\\\\slash\"}")
+    @Test func `escapes backslash and double quote inside an element`() async throws {
+        #expect(try await boundPayload(.array([.text("he said \"hi\"")])) == "{\"he said \\\"hi\\\"\"}")
+        #expect(try await boundPayload(.array([.text("back\\slash")])) == "{\"back\\\\slash\"}")
     }
 
     /// `bytea` renders as `\xdeadbeef`, whose backslash must survive quoting.
-    @Test func `escapes the bytea prefix backslash`() {
-        #expect(arrayLiteral([.blob([0xde, 0xad])]) == "{\"\\\\xdead\"}")
+    @Test func `escapes the bytea prefix backslash`() async throws {
+        #expect(try await boundPayload(.array([.blob([0xde, 0xad])])) == "{\"\\\\xdead\"}")
     }
 
-    @Test func `nests arrays without quoting the inner braces`() {
+    @Test func `nests arrays without quoting the inner braces`() async throws {
         let nested: SQL.Value = .array([.array([.int(1), .int(2)]), .array([.int(3)])])
-        #expect(SQLValueText(nested) == "{{\"1\",\"2\"},{\"3\"}}")
+        #expect(try await boundPayload(nested) == "{{\"1\",\"2\"},{\"3\"}}")
     }
 
-    @Test func `carries a decimal wider than any fixed-width decimal type`() {
+    @Test func `carries a decimal wider than any fixed-width decimal type`() async throws {
         let digits = "123456789012345678901234567890123456789.000000000000000000001"
-        #expect(SQLValueText(.decimal(digits)) == digits)
+        #expect(try await boundPayload(.decimal(digits)) == digits)
     }
 }

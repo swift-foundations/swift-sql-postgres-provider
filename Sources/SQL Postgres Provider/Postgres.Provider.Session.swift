@@ -1,29 +1,36 @@
-import Darwin
 internal import SQL
 internal import RFC_4122
 internal import Time_Primitive
 
 extension Postgres {
+    /// The PostgreSQL wire protocol: framing, startup, SCRAM authentication, extended query.
+    ///
+    /// Byte transport is a ``Postgres/Transport``, so nothing here names a descriptor, a syscall
+    /// or a platform. That split is what lets the protocol be exercised against an in-memory
+    /// transport rather than only against a live server.
     actor Session {
         private let configuration: Postgres.Configuration
-        private var descriptor: Int32
+        private let transport: any Postgres.Transport
         private var closed = false
         private var started = false
 
         init(configuration: Postgres.Configuration) throws(Postgres.Error) {
             self.configuration = configuration
-            self.descriptor = try Self.connect(configuration)
+            self.transport = try Postgres.SocketTransport(configuration: configuration)
         }
 
-        deinit {
-            if descriptor >= 0 { Darwin.close(descriptor) }
+        /// Runs the wire protocol over a caller-supplied transport.
+        ///
+        /// The seam that makes startup and the SCRAM handshake testable without a server.
+        init(configuration: Postgres.Configuration, transport: any Postgres.Transport) {
+            self.configuration = configuration
+            self.transport = transport
         }
 
         func close() {
             guard closed == false else { return }
             closed = true
-            Darwin.close(descriptor)
-            descriptor = -1
+            transport.close()
         }
 
         func execute(sql: String, bindings: [SQL.Value] = []) async throws(Postgres.Error) -> (count: Int, rows: [Postgres.Row]) {
@@ -59,28 +66,6 @@ extension Postgres {
                     break
                 }
             }
-        }
-
-        private static func connect(_ configuration: Postgres.Configuration) throws(Postgres.Error) -> Int32 {
-            let host = configuration.host == "localhost" ? "127.0.0.1" : configuration.host
-            var address = sockaddr_in()
-            address.sin_family = sa_family_t(AF_INET)
-            address.sin_port = configuration.port.bigEndian
-            let parsed = host.withCString { inet_pton(AF_INET, $0, &address.sin_addr) }
-            guard parsed == 1 else { throw .configuration("native client requires an IPv4 address") }
-            let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
-            guard socket >= 0 else { throw .connection("socket creation failed: \(errno)") }
-            let connected = withUnsafePointer(to: &address) { pointer in
-                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    Darwin.connect(socket, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
-            }
-            guard connected == 0 else {
-                let code = errno
-                Darwin.close(socket)
-                throw .connection("connect failed: \(code)")
-            }
-            return socket
         }
 
         private func startup() throws(Postgres.Error) {
@@ -154,64 +139,22 @@ extension Postgres {
         }
 
         private func receive() async throws(Postgres.Error) -> (type: UInt8, body: [UInt8]) {
-            while true {
-                guard Task.isCancelled == false else { throw .cancelled }
-                try wait(for: Int16(POLLIN))
-                return try receiveSynchronously()
-            }
+            guard Task.isCancelled == false else { throw .cancelled }
+            return try receiveSynchronously()
         }
 
+        /// Reads one backend message: a one-byte tag, a four-byte length inclusive of itself,
+        /// then the body.
         private func receiveSynchronously() throws(Postgres.Error) -> (type: UInt8, body: [UInt8]) {
-            let type = try readExact(1)[0]
-            let length = Int(try int32Value(readExact(4), at: 0))
+            let type = try transport.readExact(1)[0]
+            let length = Int(try int32Value(transport.readExact(4), at: 0))
             guard length >= 4 else { throw .protocolViolation("message length is less than four") }
             guard length <= 16 * 1024 * 1024 else { throw .frameTooLarge(length) }
-            return (type, try readExact(length - 4))
-        }
-
-        private func readExact(_ count: Int) throws(Postgres.Error) -> [UInt8] {
-            guard count >= 0 else { throw .protocolViolation("negative read length") }
-            var result: [UInt8] = []
-            result.reserveCapacity(count)
-            while result.count < count {
-                var buffer = [UInt8](repeating: 0, count: count - result.count)
-                let readCount = buffer.withUnsafeMutableBytes { Darwin.read(descriptor, $0.baseAddress, $0.count) }
-                if readCount < 0, errno == EINTR { continue }
-                if readCount < 0 { throw .connection("read failed: \(errno)") }
-                if readCount == 0 { throw .connection("peer closed the connection") }
-                result.append(contentsOf: buffer.prefix(readCount))
-            }
-            return result
+            return (type, try transport.readExact(length - 4))
         }
 
         private func send(_ bytes: [UInt8]) throws(Postgres.Error) {
-            var offset = 0
-            while offset < bytes.count {
-                guard Task.isCancelled == false else { throw .cancelled }
-                try wait(for: Int16(POLLOUT))
-                let written = bytes.withUnsafeBytes { buffer in
-                    Darwin.write(descriptor, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
-                }
-                if written < 0, errno == EINTR { continue }
-                if written < 0 { throw .connection("write failed: \(errno)") }
-                guard written > 0 else { throw .connection("write made no progress") }
-                offset += written
-            }
-        }
-
-        private func wait(for events: Int16) throws(Postgres.Error) {
-            while true {
-                guard Task.isCancelled == false else { throw .cancelled }
-                var pollfd = Darwin.pollfd(fd: descriptor, events: events, revents: 0)
-                let result = Darwin.poll(&pollfd, 1, 50)
-                if result < 0, errno == EINTR { continue }
-                if result < 0 { throw .connection("poll failed: \(errno)") }
-                if result == 0 { continue }
-                if pollfd.revents & Int16(POLLERR | POLLHUP | POLLNVAL) != 0 {
-                    throw .connection("socket polling failed: \(pollfd.revents)")
-                }
-                return
-            }
+            try transport.writeAll(bytes)
         }
 
         private func parse(_ sql: String) -> [UInt8] {
@@ -332,7 +275,7 @@ private extension String {
     }
 }
 
-func SQLValueText(_ value: SQL.Value) -> String {
+private func SQLValueText(_ value: SQL.Value) -> String {
     switch value {
     case .text(let value): value
     case .int(let value): String(value)
@@ -358,7 +301,7 @@ func SQLValueText(_ value: SQL.Value) -> String {
 /// the element type's own input function — and it removes an entire class of delimiter bug,
 /// since an unquoted element containing `,`, `{`, `}`, whitespace, or the literal text `NULL`
 /// would otherwise change the array's shape or smuggle in a null.
-func arrayLiteral(_ elements: [SQL.Value]) -> String {
+private func arrayLiteral(_ elements: [SQL.Value]) -> String {
     let rendered = elements.map { element -> String in
         switch element {
         case .null: return "NULL"
@@ -370,7 +313,7 @@ func arrayLiteral(_ elements: [SQL.Value]) -> String {
 }
 
 /// Escapes the two characters that are special inside a quoted array element.
-func quotedElement(_ text: String) -> String {
+private func quotedElement(_ text: String) -> String {
     var result = ""
     result.reserveCapacity(text.count)
     for character in text {

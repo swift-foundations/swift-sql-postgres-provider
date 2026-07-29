@@ -8,21 +8,20 @@ extension Postgres {
     /// Byte transport is a ``Postgres/Transport``, so nothing here names a descriptor, a syscall
     /// or a platform. That split is what lets the protocol be exercised against an in-memory
     /// transport rather than only against a live server.
-    actor Session {
+    ///
+    /// Generic over its transport rather than holding `any Postgres.Transport`: the transport is
+    /// chosen statically at every call site — `SocketTransport` in production, the in-memory
+    /// double in tests — so there is nothing for an existential to buy here.
+    actor Session<Wire: Postgres.Transport> {
         private let configuration: Postgres.Configuration
-        private let transport: any Postgres.Transport
+        private let transport: Wire
         private var closed = false
         private var started = false
-
-        init(configuration: Postgres.Configuration) throws(Postgres.Error) {
-            self.configuration = configuration
-            self.transport = try Postgres.SocketTransport(configuration: configuration)
-        }
 
         /// Runs the wire protocol over a caller-supplied transport.
         ///
         /// The seam that makes startup and the SCRAM handshake testable without a server.
-        init(configuration: Postgres.Configuration, transport: any Postgres.Transport) {
+        init(configuration: Postgres.Configuration, transport: Wire) {
             self.configuration = configuration
             self.transport = transport
         }
@@ -54,14 +53,19 @@ extension Postgres {
                 switch message.type {
                 case 49, 50, 51, 116, 84:
                     if message.type == 84 { columns = try rowDescription(message.body) }
+
                 case 68:
                     rows.append(try dataRow(message.body, columns: columns))
+
                 case 67:
                     count = commandCount(message.body)
+
                 case 90:
                     return (count, rows)
+
                 case 69:
                     throw .server(errorMessage(message.body))
+
                 default:
                     break
                 }
@@ -87,9 +91,11 @@ extension Postgres {
                     let code = try int32Value(message.body, at: 0)
                     switch code {
                     case 0: break
+
                     case 3:
                         guard let password = configuration.password else { throw .authentication("server requested a password") }
                         try send(frame(type: 112, body: cString(password)))
+
                     case 10:
                         guard configuration.password != nil else { throw .authentication("server requested SCRAM password") }
                         let mechanisms = cStrings(message.body.dropFirst(4))
@@ -101,6 +107,7 @@ extension Postgres {
                         initial.append(contentsOf: int32(Int32(value.utf8.count)))
                         initial.append(contentsOf: value.utf8)
                         try send(frame(type: 112, body: initial))
+
                     case 11:
                         guard let first, let password = configuration.password else { throw .authentication("invalid SCRAM state") }
                         let serverFirst = String(decoding: message.body.dropFirst(4).dropLast(), as: UTF8.self)
@@ -117,21 +124,29 @@ extension Postgres {
                             serverFinal: String(decoding: final.body.dropFirst(4).dropLast(), as: UTF8.self),
                             expected: result.serverSignature
                         )
+
                     case 12:
                         throw .authentication("unexpected SCRAM server-final message")
+
                     case 5, 7, 8, 9:
                         throw .authentication("authentication method \(code) is not implemented")
+
                     default:
                         throw .authentication("unknown authentication method \(code)")
                     }
+
                 case 75, 83:
                     break
+
                 case 90:
                     return
+
                 case 69:
                     throw .server(errorMessage(message.body))
+
                 case 65:
                     break
+
                 default:
                     break
                 }
@@ -169,6 +184,7 @@ extension Postgres {
             for binding in bindings {
                 switch binding {
                 case .null: body.append(contentsOf: int32(-1))
+
                 default:
                     let bytes = Array(binding.text.utf8)
                     body.append(contentsOf: int32(Int32(bytes.count)))
@@ -298,6 +314,7 @@ private func SQLValueText(_ value: SQL.Value) -> String {
     case .timestamp(let value): timestampText(value)
     case .blob(let bytes): "\\x" + bytes.map(hex).joined()
     case .jsonb(let bytes): String(decoding: bytes, as: UTF8.self)
+
     // The digit string is already exact — emitting it verbatim is what keeps a `numeric`
     // wider than any fixed-width decimal type intact across the seam.
     case .decimal(let digits): digits
@@ -363,4 +380,14 @@ private func hex(_ value: UInt8) -> String {
 
 extension SQL.Value {
     fileprivate var text: String { SQLValueText(self) }
+}
+
+extension Postgres.Session where Wire == Postgres.SocketTransport {
+    /// Opens a socket to the configured server and runs the wire protocol over it.
+    init(configuration: Postgres.Configuration) throws(Postgres.Error) {
+        self.init(
+            configuration: configuration,
+            transport: try Postgres.SocketTransport(configuration: configuration)
+        )
+    }
 }

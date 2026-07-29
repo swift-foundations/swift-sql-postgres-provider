@@ -7,11 +7,6 @@ extension Postgres {
     public struct Row: SQL.Row {
         let names: [String]
         let values: [[UInt8]?]
-
-        init(names: [String], values: [[UInt8]?]) {
-            self.names = names
-            self.values = values
-        }
     }
 }
 

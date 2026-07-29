@@ -87,7 +87,7 @@ import Time_Primitive
                         try row.stringIfPresent("name") ?? ""
                     }
                 }
-                #expect(probe == "")
+                #expect(probe?.isEmpty == true)
             }
         }
 

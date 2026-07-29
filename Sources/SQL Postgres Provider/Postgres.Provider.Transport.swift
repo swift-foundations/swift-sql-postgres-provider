@@ -1,4 +1,9 @@
-import Darwin
+internal import Byte_Primitives
+internal import ISO_9945_Kernel_Poll
+internal import ISO_9945_Kernel_Socket
+internal import ISO_9945_Kernel_Socket_Address
+internal import POSIX_Kernel_Poll
+internal import POSIX_Kernel_Socket
 internal import SQL
 
 extension Postgres {
@@ -9,10 +14,8 @@ extension Postgres {
     /// different reasons to change — one tracks the PostgreSQL protocol, the other tracks the
     /// platform — and because the wire protocol is untestable while it is welded to a socket.
     ///
-    /// Everything platform-specific lives behind this protocol: descriptors, readiness polling,
-    /// `EINTR` policy, and address handling. A conforming type is expected to handle short
-    /// reads and writes, to retry on `EINTR` where that is the correct policy, and to abandon a
-    /// blocking wait when the surrounding `Task` is cancelled.
+    /// A conforming type handles short reads and writes, applies the correct `EINTR` policy, and
+    /// abandons a blocking wait when the surrounding `Task` is cancelled.
     protocol Transport: Sendable {
         /// Reads exactly `count` bytes, blocking until they arrive.
         ///
@@ -36,53 +39,89 @@ extension Postgres {
 extension Postgres.Socket {
     /// A ``Postgres/Transport`` over a blocking IPv4 TCP socket.
     ///
-    /// This is the only type in the package that names the kernel. It is deliberately the whole
-    /// platform surface: replacing it with a swift-posix / swift-iso-9945 implementation is what
-    /// makes the package build off Apple platforms, and nothing outside this file has to change
-    /// for that to happen.
+    /// Every syscall goes through the Institute's POSIX stack rather than a platform module:
+    /// `swift-iso-9945` binds the syscalls and owns the `#if canImport(Darwin)/Glibc` seam, and
+    /// `swift-posix` layers the `EINTR` policy on top. Nothing here names a platform, which is
+    /// what makes this file — and therefore the package — build off Apple platforms.
     ///
-    /// Known limitations, all of them this type's rather than the protocol's: IPv4 literals only
-    /// (no DNS, no IPv6), no TLS, and `connect` without `EINTR` completion —
-    /// see swift-institute/Issues#60.
+    /// The `connect` policy is the reason to compose rather than hand-roll. `EINTR` on
+    /// `connect(2)` does **not** mean "retry the call": the connection attempt continues
+    /// asynchronously, and the correct recovery is `poll(POLLOUT)` then `getsockopt(SO_ERROR)`.
+    /// `POSIX.Kernel.Socket.Connect` implements exactly that. The hand-rolled predecessor
+    /// retried nothing and closed the descriptor instead — swift-institute/Issues#60.
+    ///
+    /// Remaining limitations, all this type's rather than the protocol's: IPv4 literals only
+    /// (`Kernel.Socket.Address.Info` would supply DNS and IPv6), and no TLS.
     final class Transport: @unchecked Sendable, Postgres.Transport {
-        private var descriptor: Int32
+        /// `ISO_9945.Kernel.Socket.Descriptor` is `~Copyable` with an owning `deinit`, so it
+        /// cannot be moved out of a class property. `close()` therefore shuts the connection
+        /// down — which only borrows — and the descriptor's own `deinit` performs `close(2)`
+        /// when this object is released. Shutdown is what the peer observes; the descriptor is
+        /// released deterministically with the transport.
+        private let descriptor: ISO_9945.Kernel.Socket.Descriptor
         private var closed = false
 
         init(configuration: Postgres.Configuration) throws(Postgres.Error) {
             self.descriptor = try Self.connect(configuration)
         }
 
-        deinit {
-            if descriptor >= 0 { Darwin.close(descriptor) }
-        }
-
         func close() {
             guard closed == false else { return }
             closed = true
-            Darwin.close(descriptor)
-            descriptor = -1
+            do throws(ISO_9945.Kernel.Socket.Shutdown.Error) {
+                try ISO_9945.Kernel.Socket.Shutdown.shutdown(descriptor, how: .both)
+            } catch {
+                // Deliberately terminal. A failed shutdown means the connection is already
+                // gone — `ENOTCONN` when the peer hung up first is the ordinary case — and
+                // `close()` is the idempotent teardown path with no caller left to inform.
+                // The descriptor is released by its own `deinit` regardless.
+            }
         }
 
-        private static func connect(_ configuration: Postgres.Configuration) throws(Postgres.Error) -> Int32 {
+        private static func connect(
+            _ configuration: Postgres.Configuration
+        ) throws(Postgres.Error) -> ISO_9945.Kernel.Socket.Descriptor {
             let host = configuration.host == "localhost" ? "127.0.0.1" : configuration.host
-            var address = sockaddr_in()
-            address.sin_family = sa_family_t(AF_INET)
-            address.sin_port = configuration.port.bigEndian
-            let parsed = host.withCString { inet_pton(AF_INET, $0, &address.sin_addr) }
-            guard parsed == 1 else { throw .configuration("native client requires an IPv4 address") }
-            let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
-            guard socket >= 0 else { throw .connection("socket creation failed: \(errno)") }
-            let connected = withUnsafePointer(to: &address) { pointer in
-                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    Darwin.connect(socket, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
+            guard let address = Self.address(host: host, port: configuration.port) else {
+                throw .configuration("native client requires an IPv4 address")
             }
-            guard connected == 0 else {
-                let code = errno
-                Darwin.close(socket)
-                throw .connection("connect failed: \(code)")
+            let descriptor: ISO_9945.Kernel.Socket.Descriptor
+            do {
+                descriptor = try ISO_9945.Kernel.Socket.Create.create(domain: .inet, kind: .stream)
+            } catch {
+                throw .connection("socket creation failed: \(error)")
             }
-            return socket
+            do {
+                // EINTR-safe: completes through poll(POLLOUT) + getsockopt(SO_ERROR) rather than
+                // retrying connect(2), which would report EALREADY.
+                try POSIX.Kernel.Socket.Connect.connect(descriptor, address: address)
+            } catch {
+                throw .connection("connect failed: \(error)")
+            }
+            return descriptor
+        }
+
+        /// Parses a dotted quad into the address an `IPv4` carries.
+        ///
+        /// Hand-parsed rather than via `inet_pton`, which lives in a platform module. Anything
+        /// that is not exactly four decimal octets is rejected, so a hostname fails here with a
+        /// configuration error rather than silently becoming a wrong address.
+        private static func address(
+            host: String,
+            port: UInt16
+        ) -> ISO_9945.Kernel.Socket.Address.IPv4? {
+            let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+            guard parts.count == 4 else { return nil }
+            var raw: UInt32 = 0
+            for part in parts {
+                guard part.isEmpty == false,
+                    part.count <= 3,
+                    part.allSatisfy({ $0.isASCII && $0.isNumber }),
+                    let octet = UInt8(part)
+                else { return nil }
+                raw = (raw << 8) | UInt32(octet)
+            }
+            return ISO_9945.Kernel.Socket.Address.IPv4(address: raw.bigEndian, port: port.bigEndian)
         }
 
         func readExact(_ count: Int) throws(Postgres.Error) -> [UInt8] {
@@ -90,42 +129,70 @@ extension Postgres.Socket {
             var result: [UInt8] = []
             result.reserveCapacity(count)
             while result.count < count {
-                try wait(for: Int16(POLLIN))
-                var buffer = [UInt8](repeating: 0, count: count - result.count)
-                let readCount = buffer.withUnsafeMutableBytes { Darwin.read(descriptor, $0.baseAddress, $0.count) }
-                if readCount < 0, errno == EINTR { continue }
-                if readCount < 0 { throw .connection("read failed: \(errno)") }
-                if readCount == 0 { throw .connection("peer closed the connection") }
-                result.append(contentsOf: buffer.prefix(readCount))
+                try wait(for: .input)
+                var chunk = [Byte](repeating: Byte(0), count: count - result.count)
+                let received = try Self.receive(descriptor, into: &chunk)
+                if received == 0 { throw .connection("peer closed the connection") }
+                result.append(contentsOf: chunk.prefix(received).map(\.underlying))
             }
             return result
         }
 
-        func writeAll(_ bytes: [UInt8]) throws(Postgres.Error) {
-            var offset = 0
-            while offset < bytes.count {
-                try wait(for: Int16(POLLOUT))
-                let written = bytes.withUnsafeBytes { buffer in
-                    Darwin.write(descriptor, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
+        private static func receive(
+            _ descriptor: borrowing ISO_9945.Kernel.Socket.Descriptor,
+            into chunk: inout [Byte]
+        ) throws(Postgres.Error) -> Int {
+            do {
+                return try chunk.withUnsafeMutableBufferPointer { buffer in
+                    var span = buffer.mutableSpan
+                    return try POSIX.Kernel.Socket.Receive.receive(descriptor, into: &span)
                 }
-                if written < 0, errno == EINTR { continue }
-                if written < 0 { throw .connection("write failed: \(errno)") }
-                guard written > 0 else { throw .connection("write made no progress") }
-                offset += written
+            } catch {
+                throw .connection("read failed: \(error)")
             }
         }
 
-        /// Waits for readiness, in short slices so a cancelled task does not block on the kernel.
-        private func wait(for events: Int16) throws(Postgres.Error) {
+        func writeAll(_ bytes: [UInt8]) throws(Postgres.Error) {
+            let payload = bytes.map { Byte($0) }
+            var offset = 0
+            while offset < payload.count {
+                try wait(for: .output)
+                let sent = try Self.send(descriptor, payload, from: offset)
+                guard sent > 0 else { throw .connection("write made no progress") }
+                offset += sent
+            }
+        }
+
+        private static func send(
+            _ descriptor: borrowing ISO_9945.Kernel.Socket.Descriptor,
+            _ payload: [Byte],
+            from offset: Int
+        ) throws(Postgres.Error) -> Int {
+            do {
+                return try payload.withUnsafeBufferPointer { buffer in
+                    let remaining = UnsafeBufferPointer(rebasing: buffer[offset...])
+                    return try POSIX.Kernel.Socket.Send.send(descriptor, from: remaining.span)
+                }
+            } catch {
+                throw .connection("write failed: \(error)")
+            }
+        }
+
+        /// Waits for readiness in short slices, so a cancelled task does not block on the kernel.
+        private func wait(for events: ISO_9945.Kernel.Poll.Events) throws(Postgres.Error) {
             while true {
                 guard Task.isCancelled == false else { throw .cancelled }
-                var pollfd = Darwin.pollfd(fd: descriptor, events: events, revents: 0)
-                let result = Darwin.poll(&pollfd, 1, 50)
-                if result < 0, errno == EINTR { continue }
-                if result < 0 { throw .connection("poll failed: \(errno)") }
-                if result == 0 { continue }
-                if pollfd.revents & Int16(POLLERR | POLLHUP | POLLNVAL) != 0 {
-                    throw .connection("socket polling failed: \(pollfd.revents)")
+                var entries = [ISO_9945.Kernel.Poll.Entry(descriptor, requested: events)]
+                let ready: Int
+                do {
+                    ready = try POSIX.Kernel.Poll.poll(&entries, timeout: 50)
+                } catch {
+                    throw .connection("poll failed: \(error)")
+                }
+                if ready == 0 { continue }
+                let returned = entries[0].returned
+                if returned.contains(.error) || returned.contains(.hangUp) || returned.contains(.invalid) {
+                    throw .connection("socket polling failed: \(returned)")
                 }
                 return
             }

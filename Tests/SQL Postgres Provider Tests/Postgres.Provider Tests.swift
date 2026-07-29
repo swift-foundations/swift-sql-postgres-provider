@@ -1,4 +1,3 @@
-import Darwin
 import SQL
 import Testing
 import Time_Primitive
@@ -127,11 +126,6 @@ import Time_Primitive
             }
         }
     }
-}
-
-private func environment(_ name: String) -> String? {
-    guard let value = getenv(name) else { return nil }
-    return String(cString: value)
 }
 
 @Suite struct `Array Literal Test` {

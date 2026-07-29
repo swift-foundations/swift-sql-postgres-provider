@@ -1,8 +1,9 @@
-@testable import SQL_Postgres_Provider
 import Darwin
 import SQL
 import Testing
 import Time_Primitive
+
+@testable import SQL_Postgres_Provider
 
 @Suite struct `Postgres Provider Test` {
     @Suite struct `Configuration Test` {
@@ -33,7 +34,7 @@ import Time_Primitive
                     Array("hello".utf8),
                     nil,
                     Array("\\x00ff".utf8),
-                    Array("2026-07-16 12:34:56.123456789+02".utf8)
+                    Array("2026-07-16 12:34:56.123456789+02".utf8),
                 ]
             )
             #expect(try row.string("text") == "hello")
@@ -56,10 +57,11 @@ import Time_Primitive
         /// all four explicit variables. It never starts, stops, or mutates an unmanaged server.
         @Test func `managed database executes a read and rollback scope`() async throws {
             guard let host = environment("POSTGRES_NATIVE_TEST_HOST"),
-                  let databaseName = environment("POSTGRES_NATIVE_TEST_DATABASE"),
-                  let user = environment("POSTGRES_NATIVE_TEST_USER"),
-                  let portText = environment("POSTGRES_NATIVE_TEST_PORT"),
-                  let port = UInt16(portText) else { return }
+                let databaseName = environment("POSTGRES_NATIVE_TEST_DATABASE"),
+                let user = environment("POSTGRES_NATIVE_TEST_USER"),
+                let portText = environment("POSTGRES_NATIVE_TEST_PORT"),
+                let port = UInt16(portText)
+            else { return }
             let password = environment("POSTGRES_NATIVE_TEST_PASSWORD")
             let configuration = try Postgres.Configuration(
                 host: host,
@@ -91,10 +93,11 @@ import Time_Primitive
 
         @Test func `managed database cancellation releases a bounded lease`() async throws {
             guard let host = environment("POSTGRES_NATIVE_TEST_HOST"),
-                  let databaseName = environment("POSTGRES_NATIVE_TEST_DATABASE"),
-                  let user = environment("POSTGRES_NATIVE_TEST_USER"),
-                  let portText = environment("POSTGRES_NATIVE_TEST_PORT"),
-                  let port = UInt16(portText) else { return }
+                let databaseName = environment("POSTGRES_NATIVE_TEST_DATABASE"),
+                let user = environment("POSTGRES_NATIVE_TEST_USER"),
+                let portText = environment("POSTGRES_NATIVE_TEST_PORT"),
+                let port = UInt16(portText)
+            else { return }
             let configuration = try Postgres.Configuration(
                 host: host,
                 port: port,
@@ -143,7 +146,12 @@ private func environment(_ name: String) -> String? {
         ].flatMap { $0 }
         let transport = MemoryTransport(inbound: inbound)
         let configuration = try Postgres.Configuration(
-            host: "127.0.0.1", port: 5432, database: "d", user: "u", password: nil, maxConnections: 1
+            host: "127.0.0.1",
+            port: 5432,
+            database: "d",
+            user: "u",
+            password: nil,
+            maxConnections: 1
         )
         let session = Postgres.Session(configuration: configuration, transport: transport)
         _ = try await session.execute(sql: "SELECT $1", bindings: [value])
@@ -156,7 +164,8 @@ private func environment(_ name: String) -> String? {
         }
         let body = start + 5
         let lengthOffset = body + 8
-        let length = Int(written[lengthOffset]) << 24 | Int(written[lengthOffset + 1]) << 16
+        let length =
+            Int(written[lengthOffset]) << 24 | Int(written[lengthOffset + 1]) << 16
             | Int(written[lengthOffset + 2]) << 8 | Int(written[lengthOffset + 3])
         guard length >= 0 else { throw Postgres.Error.protocolViolation("null bound") }
         let payload = written[(lengthOffset + 4)..<(lengthOffset + 4 + length)]

@@ -1,5 +1,5 @@
-internal import SQL
 internal import RFC_4122
+internal import SQL
 internal import Time_Primitive
 
 extension Postgres {
@@ -163,17 +163,20 @@ extension Postgres {
 
         private func bind(_ bindings: [SQL.Value]) -> [UInt8] {
             var body = cString("") + cString("")
-            body.append(contentsOf: int16(1)); body.append(contentsOf: int16(0))
+            body.append(contentsOf: int16(1))
+            body.append(contentsOf: int16(0))
             body.append(contentsOf: int16(Int16(bindings.count)))
             for binding in bindings {
                 switch binding {
                 case .null: body.append(contentsOf: int32(-1))
                 default:
                     let bytes = Array(binding.text.utf8)
-                    body.append(contentsOf: int32(Int32(bytes.count))); body.append(contentsOf: bytes)
+                    body.append(contentsOf: int32(Int32(bytes.count)))
+                    body.append(contentsOf: bytes)
                 }
             }
-            body.append(contentsOf: int16(1)); body.append(contentsOf: int16(0))
+            body.append(contentsOf: int16(1))
+            body.append(contentsOf: int16(0))
             return frame(type: 66, body: body)
         }
 
@@ -185,7 +188,8 @@ extension Postgres {
             var names: [String] = []
             let count = Int(readUInt16(body, at: 0))
             for _ in 0..<count {
-                let (name, next) = try readCString(body, at: cursor); cursor = next
+                let (name, next) = try readCString(body, at: cursor)
+                cursor = next
                 guard cursor + 18 <= body.count else { throw .protocolViolation("short row description field") }
                 cursor += 18
                 names.append(name)
@@ -200,11 +204,14 @@ extension Postgres {
             var values: [[UInt8]?] = []
             for _ in 0..<count {
                 guard cursor + 4 <= body.count else { throw .protocolViolation("short data row value") }
-                let length = Int(readInt32(body, at: cursor)); cursor += 4
-                if length == -1 { values.append(nil) }
-                else {
+                let length = Int(readInt32(body, at: cursor))
+                cursor += 4
+                if length == -1 {
+                    values.append(nil)
+                } else {
                     guard length >= 0, cursor + length <= body.count else { throw .protocolViolation("invalid data row length") }
-                    values.append(Array(body[cursor..<(cursor + length)])); cursor += length
+                    values.append(Array(body[cursor..<(cursor + length)]))
+                    cursor += length
                 }
             }
             return Postgres.Row(names: columns, values: values)
@@ -214,7 +221,8 @@ extension Postgres {
             var cursor = 0
             var fields: [String] = []
             while cursor < body.count, body[cursor] != 0 {
-                let code = body[cursor]; cursor += 1
+                let code = body[cursor]
+                cursor += 1
                 do throws(Postgres.Error) {
                     let (value, next) = try readCString(body, at: cursor)
                     fields.append("\(Character(UnicodeScalar(code))): \(value)")
@@ -255,9 +263,13 @@ private func cStrings(_ body: ArraySlice<UInt8>) -> [String] {
 }
 
 private func int16(_ value: Int16) -> [UInt8] { [UInt8(truncatingIfNeeded: value >> 8), UInt8(truncatingIfNeeded: value)] }
-private func int32(_ value: Int32) -> [UInt8] { [UInt8(truncatingIfNeeded: value >> 24), UInt8(truncatingIfNeeded: value >> 16), UInt8(truncatingIfNeeded: value >> 8), UInt8(truncatingIfNeeded: value)] }
+private func int32(_ value: Int32) -> [UInt8] {
+    [UInt8(truncatingIfNeeded: value >> 24), UInt8(truncatingIfNeeded: value >> 16), UInt8(truncatingIfNeeded: value >> 8), UInt8(truncatingIfNeeded: value)]
+}
 private func readUInt16(_ bytes: [UInt8], at index: Int) -> UInt16 { UInt16(bytes[index]) << 8 | UInt16(bytes[index + 1]) }
-private func readInt32(_ bytes: [UInt8], at index: Int) -> Int32 { Int32(bitPattern: UInt32(bytes[index]) << 24 | UInt32(bytes[index + 1]) << 16 | UInt32(bytes[index + 2]) << 8 | UInt32(bytes[index + 3])) }
+private func readInt32(_ bytes: [UInt8], at index: Int) -> Int32 {
+    Int32(bitPattern: UInt32(bytes[index]) << 24 | UInt32(bytes[index + 1]) << 16 | UInt32(bytes[index + 2]) << 8 | UInt32(bytes[index + 3]))
+}
 
 private func int32Value(_ bytes: [UInt8], at index: Int) throws(Postgres.Error) -> Int32 {
     guard index >= 0, index + 4 <= bytes.count else { throw .protocolViolation("short integer") }
@@ -269,8 +281,8 @@ private func readCString(_ bytes: [UInt8], at index: Int) throws(Postgres.Error)
     return (String(decoding: bytes[index..<end], as: UTF8.self), end + 1)
 }
 
-private extension String {
-    func leftPadded(to width: Int, with character: Character) -> String {
+extension String {
+    fileprivate func leftPadded(to width: Int, with character: Character) -> String {
         count >= width ? self : String(repeating: String(character), count: width - count) + self
     }
 }
@@ -332,7 +344,8 @@ private func timestampText(_ value: Instant) -> String {
             secondsSinceEpoch: Int(value.secondsSinceUnixEpoch),
             nanoseconds: Int(value.nanosecondFraction)
         )
-        return "\(time.year.rawValue)-\(decimal(time.month.rawValue, width: 2))-\(decimal(time.day.rawValue, width: 2)) \(decimal(time.hour.value, width: 2)):\(decimal(time.minute.value, width: 2)):\(decimal(time.second.value, width: 2)).\(decimal(time.millisecond.value, width: 3))\(decimal(time.microsecond.value, width: 3))\(decimal(time.nanosecond.value, width: 3))+00"
+        return
+            "\(time.year.rawValue)-\(decimal(time.month.rawValue, width: 2))-\(decimal(time.day.rawValue, width: 2)) \(decimal(time.hour.value, width: 2)):\(decimal(time.minute.value, width: 2)):\(decimal(time.second.value, width: 2)).\(decimal(time.millisecond.value, width: 3))\(decimal(time.microsecond.value, width: 3))\(decimal(time.nanosecond.value, width: 3))+00"
     } catch {
         return String(value.secondsSinceUnixEpoch)
     }

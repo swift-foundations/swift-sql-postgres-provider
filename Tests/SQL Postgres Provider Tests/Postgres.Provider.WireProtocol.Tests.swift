@@ -1,6 +1,7 @@
-@testable import SQL_Postgres_Provider
 import SQL
 import Testing
+
+@testable import SQL_Postgres_Provider
 
 /// Exercises the PostgreSQL wire protocol against an in-memory transport.
 ///
@@ -9,7 +10,12 @@ import Testing
 @Suite struct `Wire Protocol Test` {
     private func configuration() throws -> Postgres.Configuration {
         try Postgres.Configuration(
-            host: "127.0.0.1", port: 5432, database: "d", user: "u", password: nil, maxConnections: 1
+            host: "127.0.0.1",
+            port: 5432,
+            database: "d",
+            user: "u",
+            password: nil,
+            maxConnections: 1
         )
     }
 
@@ -20,7 +26,7 @@ import Testing
 
     @Test func `startup completes on AuthenticationOk and ReadyForQuery`() async throws {
         let (session, transport) = try session([
-            Backend.authenticationOk, Backend.readyForQuery,          // startup
+            Backend.authenticationOk, Backend.readyForQuery,  // startup
             Backend.commandComplete("SELECT 1"), Backend.readyForQuery,  // the query
         ])
         let result = try await session.execute(sql: "SELECT 1")
@@ -28,7 +34,8 @@ import Testing
 
         // The startup packet is length-prefixed and carries protocol 3.0 as 196608, with no
         // leading type byte — the one unframed message in the protocol.
-        let startupLength = Int(transport.written[0]) << 24 | Int(transport.written[1]) << 16
+        let startupLength =
+            Int(transport.written[0]) << 24 | Int(transport.written[1]) << 16
             | Int(transport.written[2]) << 8 | Int(transport.written[3])
         #expect(startupLength > 4)
         #expect(Array(transport.written[4..<8]) == Backend.int32(196_608))

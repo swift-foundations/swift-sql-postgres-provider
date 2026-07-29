@@ -1,5 +1,6 @@
-@testable import SQL_Postgres_Provider
 import SQL
+
+@testable import SQL_Postgres_Provider
 
 /// A ``Postgres/Transport`` over a scripted byte buffer.
 ///

@@ -12,12 +12,15 @@ extension Postgres {
             serverFirst: String,
             nonce: String
         ) throws(Postgres.Error) -> (message: String, serverSignature: [UInt8]) {
-            let fields = Dictionary(uniqueKeysWithValues: serverFirst.split(separator: ",").compactMap { field in
-                let pair = field.split(separator: "=", maxSplits: 1).map(String.init)
-                return pair.count == 2 ? (pair[0], pair[1]) : nil
-            })
+            let fields = Dictionary(
+                uniqueKeysWithValues: serverFirst.split(separator: ",").compactMap { field in
+                    let pair = field.split(separator: "=", maxSplits: 1).map(String.init)
+                    return pair.count == 2 ? (pair[0], pair[1]) : nil
+                }
+            )
             guard let combinedNonce = fields["r"], combinedNonce.hasPrefix(nonce),
-                  let encodedSalt = fields["s"], let iteration = Int(fields["i"] ?? "") else {
+                let encodedSalt = fields["s"], let iteration = Int(fields["i"] ?? "")
+            else {
                 throw .authentication("invalid SCRAM server-first-message")
             }
             guard let salt = Self.decodeBase64(encodedSalt), iteration > 0 else {
@@ -38,10 +41,12 @@ extension Postgres {
         }
 
         static func verify(serverFinal: String, expected: [UInt8]) throws(Postgres.Error) {
-            let fields = Dictionary(uniqueKeysWithValues: serverFinal.split(separator: ",").compactMap { field in
-                let pair = field.split(separator: "=", maxSplits: 1).map(String.init)
-                return pair.count == 2 ? (pair[0], pair[1]) : nil
-            })
+            let fields = Dictionary(
+                uniqueKeysWithValues: serverFinal.split(separator: ",").compactMap { field in
+                    let pair = field.split(separator: "=", maxSplits: 1).map(String.init)
+                    return pair.count == 2 ? (pair[0], pair[1]) : nil
+                }
+            )
             guard fields["v"] == Self.encodeBase64(expected) else {
                 throw .authentication("SCRAM server signature mismatch")
             }

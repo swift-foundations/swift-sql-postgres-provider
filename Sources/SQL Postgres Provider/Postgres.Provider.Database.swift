@@ -75,7 +75,7 @@ extension Postgres {
         }
 
         private func rollback(_ session: Session) async {
-            do throws(SQL.Error) { try await command(session, "ROLLBACK") } catch { }
+            do throws(SQL.Error) { try await command(session, "ROLLBACK") } catch {}
         }
 
         private func acquire() async throws(SQL.Error) -> Session {

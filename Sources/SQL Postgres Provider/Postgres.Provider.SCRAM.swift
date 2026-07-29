@@ -1,4 +1,4 @@
-import CryptoKit
+import Crypto
 
 extension Postgres {
     enum SCRAM {

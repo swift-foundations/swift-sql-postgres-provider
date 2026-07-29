@@ -130,3 +130,47 @@ private func environment(_ name: String) -> String? {
     guard let value = getenv(name) else { return nil }
     return String(cString: value)
 }
+
+@Suite struct `Array Literal Test` {
+    @Test func `renders a flat array as a braced comma-separated literal`() {
+        #expect(arrayLiteral([.int(1), .int(2), .int(3)]) == "{\"1\",\"2\",\"3\"}")
+    }
+
+    @Test func `renders an empty array`() {
+        #expect(arrayLiteral([]) == "{}")
+    }
+
+    /// A bare `NULL` is the only way to express a null element; a quoted `"NULL"` is the
+    /// four-character string, which is why the two must not render alike.
+    @Test func `distinguishes a null element from the literal text NULL`() {
+        #expect(arrayLiteral([.null, .text("NULL")]) == "{NULL,\"NULL\"}")
+    }
+
+    /// Unquoted, each of these would change the array's shape rather than its contents.
+    @Test func `quotes elements containing delimiters`() {
+        #expect(arrayLiteral([.text("a,b")]) == "{\"a,b\"}")
+        #expect(arrayLiteral([.text("{x}")]) == "{\"{x}\"}")
+        #expect(arrayLiteral([.text(" padded ")]) == "{\" padded \"}")
+        #expect(arrayLiteral([.text("")]) == "{\"\"}")
+    }
+
+    @Test func `escapes backslash and double quote inside an element`() {
+        #expect(arrayLiteral([.text("he said \"hi\"")]) == "{\"he said \\\"hi\\\"\"}")
+        #expect(arrayLiteral([.text("back\\slash")]) == "{\"back\\\\slash\"}")
+    }
+
+    /// `bytea` renders as `\xdeadbeef`, whose backslash must survive quoting.
+    @Test func `escapes the bytea prefix backslash`() {
+        #expect(arrayLiteral([.blob([0xde, 0xad])]) == "{\"\\\\xdead\"}")
+    }
+
+    @Test func `nests arrays without quoting the inner braces`() {
+        let nested: SQL.Value = .array([.array([.int(1), .int(2)]), .array([.int(3)])])
+        #expect(SQLValueText(nested) == "{{\"1\",\"2\"},{\"3\"}}")
+    }
+
+    @Test func `carries a decimal wider than any fixed-width decimal type`() {
+        let digits = "123456789012345678901234567890123456789.000000000000000000001"
+        #expect(SQLValueText(.decimal(digits)) == digits)
+    }
+}

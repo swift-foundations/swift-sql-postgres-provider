@@ -332,7 +332,7 @@ private extension String {
     }
 }
 
-private func SQLValueText(_ value: SQL.Value) -> String {
+func SQLValueText(_ value: SQL.Value) -> String {
     switch value {
     case .text(let value): value
     case .int(let value): String(value)
@@ -343,8 +343,44 @@ private func SQLValueText(_ value: SQL.Value) -> String {
     case .timestamp(let value): timestampText(value)
     case .blob(let bytes): "\\x" + bytes.map(hex).joined()
     case .jsonb(let bytes): String(decoding: bytes, as: UTF8.self)
+    // The digit string is already exact — emitting it verbatim is what keeps a `numeric`
+    // wider than any fixed-width decimal type intact across the seam.
+    case .decimal(let digits): digits
+    case .array(let elements): arrayLiteral(elements)
     case .null: ""
     }
+}
+
+/// Renders an array as a PostgreSQL array literal: `{a,b,c}`, nesting as `{{a,b},{c}}`.
+///
+/// A `null` element is the bare word `NULL`; every other element is double-quoted. Quoting
+/// unconditionally is valid for every element type — the server parses the quoted content with
+/// the element type's own input function — and it removes an entire class of delimiter bug,
+/// since an unquoted element containing `,`, `{`, `}`, whitespace, or the literal text `NULL`
+/// would otherwise change the array's shape or smuggle in a null.
+func arrayLiteral(_ elements: [SQL.Value]) -> String {
+    let rendered = elements.map { element -> String in
+        switch element {
+        case .null: return "NULL"
+        case .array(let nested): return arrayLiteral(nested)
+        default: return "\"" + quotedElement(SQLValueText(element)) + "\""
+        }
+    }
+    return "{" + rendered.joined(separator: ",") + "}"
+}
+
+/// Escapes the two characters that are special inside a quoted array element.
+func quotedElement(_ text: String) -> String {
+    var result = ""
+    result.reserveCapacity(text.count)
+    for character in text {
+        switch character {
+        case "\\": result.append("\\\\")
+        case "\"": result.append("\\\"")
+        default: result.append(character)
+        }
+    }
+    return result
 }
 
 private func timestampText(_ value: Instant) -> String {

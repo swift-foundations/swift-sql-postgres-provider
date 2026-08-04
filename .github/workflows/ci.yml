@@ -5,18 +5,10 @@ name: CI
 # only admitted events, concurrency, a `uses:` job and typed inputs. No
 # `runs-on`, steps, tool setup, matrix, or validation predicate belongs here.
 #
-# ---------------------------------------------------------------------------
-# Where the pin stops
-# ---------------------------------------------------------------------------
-# The `uses:` references below are pinned to a commit rather than floating to
-# `@main`, so a green tick here is evidence about a known wrapper revision.
-#
-# The pin reaches exactly ONE hop. `swift-foundations/.github`'s own
-# `swift-ci.yml` delegates onward with
-# `uses: swift-institute/.github/.github/workflows/swift-ci.yml@main`, which is
-# a floating ref this file cannot pin. So the universal reusable — the tier that
-# actually owns the build/test matrix — can still change without this file
-# changing. Pinning here removes one source of drift, not all of them.
+# Both `uses:` references below float on `@main`, permanently, with no pin
+# and no override path — the Institute's standing intra-Institute
+# reusable-workflow doctrine (`swift-institute/Skills` `ci-cd/SKILL.md`;
+# `swift-institute/.github#107` closed `not planned`).
 #
 # ---------------------------------------------------------------------------
 # Linux and Windows are expected RED until the transport is composed
@@ -60,10 +52,10 @@ concurrency:
 jobs:
   # Build + test matrix — swift-foundations/.github/.github/workflows/swift-ci.yml (layer wrapper)
   ci:
-    uses: swift-foundations/.github/.github/workflows/swift-ci.yml@aee6862f860ff05f70a584ff42b0a40526c23d68
+    uses: swift-foundations/.github/.github/workflows/swift-ci.yml@main
     secrets: inherit
 
   # DocC umbrella-catalog pipeline — swift-foundations/.github/.github/workflows/swift-docs.yml
   docs:
-    uses: swift-foundations/.github/.github/workflows/swift-docs.yml@aee6862f860ff05f70a584ff42b0a40526c23d68
+    uses: swift-foundations/.github/.github/workflows/swift-docs.yml@main
     secrets: inherit

@@ -1,47 +1,5 @@
 name: CI
 
-# Thin package caller. Per the three-tier chain
-# (package thin caller -> layer wrapper -> universal reusable) this file owns
-# only admitted events, concurrency, a `uses:` job and typed inputs. No
-# `runs-on`, steps, tool setup, matrix, or validation predicate belongs here.
-#
-# ---------------------------------------------------------------------------
-# Where the pin stops
-# ---------------------------------------------------------------------------
-# The `uses:` references below are pinned to a commit rather than floating to
-# `@main`, so a green tick here is evidence about a known wrapper revision.
-#
-# The pin reaches exactly ONE hop. `swift-foundations/.github`'s own
-# `swift-ci.yml` delegates onward with
-# `uses: swift-institute/.github/.github/workflows/swift-ci.yml@main`, which is
-# a floating ref this file cannot pin. So the universal reusable — the tier that
-# actually owns the build/test matrix — can still change without this file
-# changing. Pinning here removes one source of drift, not all of them.
-#
-# ---------------------------------------------------------------------------
-# Linux and Windows are expected RED until the transport is composed
-# ---------------------------------------------------------------------------
-# `Postgres.Provider.Session` calls the kernel through an unconditional
-# `import Darwin` (socket/connect/read/write/poll/close) with no
-# `#if canImport` anywhere in the package. It therefore cannot compile off
-# Apple platforms today. That is a known defect with a filed plan, not a
-# surprise: the transport is being split from the wire protocol and re-pointed
-# at swift-posix / swift-iso-9945, which carry the portability layer.
-# Tracking: swift-institute/Workspace#50 (step 3), swift-institute/Issues#60.
-#
-# `platform-support` is deliberately NOT narrowed to `apple` to make those legs
-# green. That input declares platform-IDENTITY exclusions — a package whose
-# specification excludes a platform — and is explicitly not a cost knob and not
-# derived from `Package.swift` `platforms:`. This package's macOS-only state is
-# a defect being repaired, not an identity, so narrowing the matrix would
-# convert a true red into a false green and hide the exact signal the repair
-# needs. The full matrix stays; the red is honest and actionable.
-#
-# This is also the first CI this package has ever had. It carries a conformant
-# `Lint.swift`, `metadata.yaml`, LICENSE and README, and has nonetheless never
-# been built by anything but a laptop — "has a workflow" and "has ever verified
-# anything" are different properties, and until this commit it had neither.
-
 on:
   push:
     branches:
@@ -53,17 +11,17 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  actions: read
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Build + test matrix — swift-foundations/.github/.github/workflows/swift-ci.yml (layer wrapper)
   ci:
-    uses: swift-foundations/.github/.github/workflows/swift-ci.yml@aee6862f860ff05f70a584ff42b0a40526c23d68
-    secrets: inherit
-
-  # DocC umbrella-catalog pipeline — swift-foundations/.github/.github/workflows/swift-docs.yml
-  docs:
-    uses: swift-foundations/.github/.github/workflows/swift-docs.yml@aee6862f860ff05f70a584ff42b0a40526c23d68
+    uses: swift-foundations/.github/.github/workflows/swift-ci.yml@main
+    with:
+      integrated-docs: true
     secrets: inherit

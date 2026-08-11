@@ -35,7 +35,7 @@ directly. It does not introduce engine or trust-policy behavior.
 
 The production transport is bound to Sockets
 `3fad32626d347cbfc0e803496e7ad9c0e66162db`, TLS
-`93468b04579b86164fc60f71d65ed4dea30444dd`, DNS
+`f20b065b2f48dbf8d4c7f00c6ea1ec53f0fd729b`, DNS
 `930ab8b5dadc99d6c44b101d92422545b697db7d`, and Byte Channel
 `dfc56d1ed173aae4db784018c746050cbfbe4ee7`. Sockets owns the adaptation to
 Byte Channel's ownership-preserving `Writer.Send.Outcome`; the provider keeps
@@ -45,6 +45,13 @@ The provider imports only the provider-neutral `Domain Name System` product.
 The additive `Domain Name System Cache` product is not linked, although SwiftPM
 resolves every dependency declared by the DNS package regardless of product
 selection.
+
+`TLS.Session` is uniquely owned. The transport actor borrows it only while the
+session is live, moves it out before the first suspension in `close()`, and
+consumes it exactly once before closing the Pump and event runner. Repeated
+close calls observe terminal state and do nothing. Dropping a live transport
+invokes the synchronous TLS and Pump cancellation hooks; orderly asynchronous
+runner shutdown requires explicit close.
 
 ## Installation
 

@@ -28,11 +28,14 @@ extension Postgres.Socket {
     /// handshake and certificate validation. This adapter only supplies exact-read buffering for
     /// the PostgreSQL framing protocol.
     actor Transport: Postgres.Transport {
-        private let session: TLS.Session
+        /// Actor isolation serializes the live-to-closed transition. Moving the session out and
+        /// installing `nil` before the first suspension makes exactly one caller the close owner.
+        /// If this actor is dropped while live, `TLS.Session` and `Pump` synchronously initiate
+        /// their guarded cancellation hooks; orderly asynchronous runner shutdown requires close.
+        private var session: TLS.Session?
         private var pump: Sockets.TCP.Connection.Pump<TLS.Failure>?
         private let runner: IO<Sockets.Capabilities>.Runner
         private var buffered: [UInt8] = []
-        private var closed = false
 
         init<Resolver: DNS.Resolving>(
             configuration: Postgres.Configuration,
@@ -94,11 +97,15 @@ extension Postgres.Socket {
 
         func readExact(_ count: Int) async throws(Postgres.Error) -> [UInt8] {
             guard count >= 0 else { throw .protocolViolation("negative read length") }
-            guard closed == false else { throw .connection("connection is closed") }
             while buffered.count < count {
                 let bytes: [UInt8]
-                do { bytes = try await session.read(maximum: Swift.max(1, count - buffered.count)) }
-                catch { throw Self.error(error) }
+                switch session {
+                case .some(let session):
+                    do { bytes = try await session.read(maximum: Swift.max(1, count - buffered.count)) }
+                    catch { throw Self.error(error) }
+                case .none:
+                    throw .connection("connection is closed")
+                }
                 guard bytes.isEmpty == false else { throw .connection("peer closed the connection") }
                 buffered.append(contentsOf: bytes)
             }
@@ -108,16 +115,23 @@ extension Postgres.Socket {
         }
 
         func writeAll(_ bytes: [UInt8]) async throws(Postgres.Error) {
-            guard closed == false else { throw .connection("connection is closed") }
-            do { try await session.write(bytes) }
-            catch { throw Self.error(error) }
+            switch session {
+            case .some(let session):
+                do { try await session.write(bytes) }
+                catch { throw Self.error(error) }
+            case .none:
+                throw .connection("connection is closed")
+            }
         }
 
         func close() async {
-            guard closed == false else { return }
-            closed = true
+            let session = consume self.session
+            self.session = nil
+            guard let session = consume session else { return }
             await session.close()
-            if let pump = consume self.pump {
+            let pump = consume self.pump
+            self.pump = nil
+            if let pump = consume pump {
                 await pump.close()
             }
             await runner.shutdown()

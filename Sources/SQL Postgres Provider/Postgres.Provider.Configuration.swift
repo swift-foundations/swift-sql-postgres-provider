@@ -1,27 +1,34 @@
+public import TLS
+
 extension Postgres {
-    /// Explicit connection and pool configuration for the native client.
-    public struct Configuration: Sendable, Hashable {
-        public let host: String
+    /// PostgreSQL endpoint and authentication material.
+    ///
+    /// Resolution, certificate policy, and TLS implementation are supplied at the database
+    /// boundary.  This value therefore records the database endpoint without owning a resolver,
+    /// trust store, or TLS backend.
+    public struct Configuration: Sendable {
+        public let identity: TLS.Peer.Identity
         public let port: UInt16
         public let database: String
         public let user: String
         public let password: String?
         public let maxConnections: Int
 
+        /// Creates an endpoint identified by a validated DNS question.
         public init(
-            host: String = "127.0.0.1",
+            identity: TLS.Peer.Identity,
             port: UInt16 = 5432,
             database: String,
             user: String,
             password: String? = nil,
             maxConnections: Int = 4
         ) throws(Postgres.Error) {
-            guard host.isEmpty == false else { throw .configuration("host is empty") }
+            guard identity.hostname.isEmpty == false else { throw .configuration("host is empty") }
             guard port > 0 else { throw .configuration("port must be positive") }
             guard database.isEmpty == false else { throw .configuration("database is empty") }
             guard user.isEmpty == false else { throw .configuration("user is empty") }
             guard maxConnections > 0 else { throw .configuration("maxConnections must be positive") }
-            self.host = host
+            self.identity = identity
             self.port = port
             self.database = database
             self.user = user

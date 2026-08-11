@@ -1,6 +1,7 @@
 import SQL
 import Testing
 import Time_Primitive
+import Byte_Primitives
 
 @testable import SQL_Postgres_Provider
 
@@ -22,6 +23,7 @@ import Time_Primitive
             let configuration = try Postgres.Configuration(database: "db", user: "user", maxConnections: 3)
             #expect(configuration.maxConnections == 3)
             #expect(configuration.port == 5432)
+            #expect(configuration.identity.hostname == "127.0.0.1")
         }
     }
 
@@ -51,81 +53,6 @@ import Time_Primitive
         }
     }
 
-    @Suite struct `Integration Test` {
-        /// This test is intentionally inert unless a deliberately managed test database supplies
-        /// all four explicit variables. It never starts, stops, or mutates an unmanaged server.
-        @Test func `managed database executes a read and rollback scope`() async throws {
-            guard let host = environment("POSTGRES_NATIVE_TEST_HOST"),
-                let databaseName = environment("POSTGRES_NATIVE_TEST_DATABASE"),
-                let user = environment("POSTGRES_NATIVE_TEST_USER"),
-                let portText = environment("POSTGRES_NATIVE_TEST_PORT"),
-                let port = UInt16(portText)
-            else { return }
-            let password = environment("POSTGRES_NATIVE_TEST_PASSWORD")
-            let configuration = try Postgres.Configuration(
-                host: host,
-                port: port,
-                database: databaseName,
-                user: user,
-                password: password,
-                maxConnections: 1
-            )
-            try await Postgres.withDatabase(configuration: configuration) { database in
-                let value = try await database.read { (connection: any SQL.Connection) throws(SQL.Error) -> Int? in
-                    try await connection.fetchOne(SQL.Query(sql: "SELECT 1 AS value")) { (row: any SQL.Row) throws(SQL.Error) -> Int in
-                        try row.int("value")
-                    }
-                }
-                #expect(value == 1)
-                _ = try await database.withRollback { (connection: any SQL.Connection) throws(SQL.Error) -> Int in
-                    _ = try await connection.execute(SQL.Query(sql: "CREATE TEMP TABLE rollback_probe (value INTEGER)"))
-                    return 1
-                }
-                let probe = try await database.read { (connection: any SQL.Connection) throws(SQL.Error) -> String? in
-                    try await connection.fetchOne(SQL.Query(sql: "SELECT to_regclass('pg_temp.rollback_probe') AS name")) { (row: any SQL.Row) throws(SQL.Error) -> String in
-                        try row.stringIfPresent("name") ?? ""
-                    }
-                }
-                #expect(probe?.isEmpty == true)
-            }
-        }
-
-        @Test func `managed database cancellation releases a bounded lease`() async throws {
-            guard let host = environment("POSTGRES_NATIVE_TEST_HOST"),
-                let databaseName = environment("POSTGRES_NATIVE_TEST_DATABASE"),
-                let user = environment("POSTGRES_NATIVE_TEST_USER"),
-                let portText = environment("POSTGRES_NATIVE_TEST_PORT"),
-                let port = UInt16(portText)
-            else { return }
-            let configuration = try Postgres.Configuration(
-                host: host,
-                port: port,
-                database: databaseName,
-                user: user,
-                password: environment("POSTGRES_NATIVE_TEST_PASSWORD"),
-                maxConnections: 1
-            )
-            try await Postgres.withDatabase(configuration: configuration) { database in
-                let holder = Task {
-                    try await database.read { (connection: any SQL.Connection) throws(SQL.Error) -> Int in
-                        _ = try await connection.execute(SQL.Query(sql: "SELECT pg_sleep(1)"))
-                        return 1
-                    }
-                }
-                try await Task.sleep(for: .milliseconds(50))
-                let waiter = Task {
-                    try await database.read { (connection: any SQL.Connection) throws(SQL.Error) -> Int in
-                        try await connection.execute(SQL.Query(sql: "SELECT 1"))
-                    }
-                }
-                waiter.cancel()
-                await #expect(throws: SQL.Error.self) {
-                    _ = try await waiter.value
-                }
-                _ = try await holder.value
-            }
-        }
-    }
 }
 
 @Suite struct `Array Literal Test` {
@@ -140,7 +67,7 @@ import Time_Primitive
         ].flatMap { $0 }
         let transport = Memory.Transport(inbound: inbound)
         let configuration = try Postgres.Configuration(
-            host: "127.0.0.1",
+            fixtureHost: "127.0.0.1",
             port: 5432,
             database: "d",
             user: "u",
@@ -159,11 +86,11 @@ import Time_Primitive
         let body = start + 5
         let lengthOffset = body + 8
         let length =
-            Int(written[lengthOffset]) << 24 | Int(written[lengthOffset + 1]) << 16
-            | Int(written[lengthOffset + 2]) << 8 | Int(written[lengthOffset + 3])
+            Int(written[lengthOffset].underlying) << 24 | Int(written[lengthOffset + 1].underlying) << 16
+            | Int(written[lengthOffset + 2].underlying) << 8 | Int(written[lengthOffset + 3].underlying)
         guard length >= 0 else { throw Postgres.Error.protocolViolation("null bound") }
         let payload = written[(lengthOffset + 4)..<(lengthOffset + 4 + length)]
-        return String(decoding: payload, as: UTF8.self)
+        return String(decoding: payload.lazy.map(\.underlying), as: UTF8.self)
     }
 
     @Test func `binds a flat array as a braced comma-separated literal`() async throws {

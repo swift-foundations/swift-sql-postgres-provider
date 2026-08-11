@@ -39,6 +39,65 @@ extension Postgres {
         /// Rejects new checkouts, drains outstanding work, and closes each idle session exactly once.
         public func shutdown() async { await pool.shutdown() }
 
+        /// Opens a pull-driven cursor by moving one unique checkout into SQL-owned cursor storage.
+        public func cursor<Value: Sendable>(
+            _ statement: some SQL.Statement,
+            // `any SQL.Row` is the parameter type in swift-sql's `SQL.Reader` requirement.
+            // swiftlint:disable:next no_any_protocol_existential
+            decode: sending @escaping (any SQL.Row) throws(SQL.Error) -> Value
+        ) async throws(SQL.Error) -> sending SQL.Cursor<Value> {
+            let handle = try await checkout()
+            do throws(Postgres.Error) {
+                try await handle.resource.openCursor(
+                    sql: statement.sql,
+                    bindings: statement.bindings
+                )
+            } catch {
+                let failure = await handle.resolve(.invalid(error.sql))
+                throw failure
+            }
+
+            guard Task.isCancelled == false else {
+                let failure = await handle.resolve(.invalid(SQL.Error.cancelled))
+                throw failure
+            }
+
+            return SQL.Cursor(
+                context: handle,
+                next: { handle in
+                    do throws(Postgres.Error) {
+                        guard let row = try await handle.resource.nextCursor() else {
+                            return .exhausted(handle)
+                        }
+                        do throws(SQL.Error) {
+                            return .element(try decode(row), handle)
+                        } catch {
+                            return .failure(error, handle)
+                        }
+                    } catch {
+                        return .failure(error.sql, handle)
+                    }
+                },
+                close: { handle in
+                    do throws(Postgres.Error) {
+                        try await handle.resource.closeCursor()
+                        return .success(handle)
+                    } catch {
+                        return .failure(error.sql, handle)
+                    }
+                },
+                reuse: { handle in
+                    _ = await handle.resolve(.reusable(()))
+                },
+                invalidate: { handle in
+                    _ = await handle.resolve(.invalid(()))
+                },
+                abandon: { handle in
+                    discard handle
+                }
+            )
+        }
+
         public func read<Value: Sendable>(
             // `any SQL.Connection` is the parameter type in swift-sql's `SQL.Database` requirement.
             // swiftlint:disable:next no_any_protocol_existential
@@ -92,18 +151,9 @@ extension Postgres {
             do throws(SQL.Error) { try await command(session, "ROLLBACK") } catch {}
         }
 
-        /// Runs one scoped operation under the unique checked-out handle.
-        ///
-        /// The handle stays in this actor region. Success returns the session reusable only when
-        /// the task is still active; every failure and cancellation consumes it as invalid. Pinned
-        /// `SQL.Cursor` cannot retain this move-only handle, so an escaping cursor remains the
-        /// explicit lower-owner blocker rather than acquiring a provider-local lifecycle box.
-        private func withCheckout<Value: Sendable>(
-            _ body: (Session<Postgres.Socket.Transport>) async throws(SQL.Error) -> Value
-        ) async throws(SQL.Error) -> Value {
-            let handle: Pool.Bounded<Session<Postgres.Socket.Transport>>.Handle
+        private func checkout() async throws(SQL.Error) -> sending Pool.Bounded<Session<Postgres.Socket.Transport>>.Handle {
             do throws(Pool.Lifecycle.Error) {
-                handle = try await pool.checkout()
+                return try await pool.checkout()
             } catch {
                 switch error {
                 case .cancelled: throw .cancelled
@@ -111,6 +161,17 @@ extension Postgres {
                 case .creationFailed: throw .connection("connection creation failed")
                 }
             }
+        }
+
+        /// Runs one scoped operation under the unique checked-out handle.
+        ///
+        /// The handle stays in this actor region. Success returns the session reusable only when
+        /// the task is still active; every failure and cancellation consumes it as invalid. Cursor
+        /// acquisition uses the separate `SQL.Reader.cursor` transfer seam above.
+        private func withCheckout<Value: Sendable>(
+            _ body: (Session<Postgres.Socket.Transport>) async throws(SQL.Error) -> Value
+        ) async throws(SQL.Error) -> Value {
+            let handle = try await checkout()
 
             let outcome: Result<Value, SQL.Error>
             do throws(SQL.Error) {

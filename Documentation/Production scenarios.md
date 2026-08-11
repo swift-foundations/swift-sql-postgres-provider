@@ -26,14 +26,14 @@ run. They are not executed in this repository under the TX-SQL2 source-only evid
    the handle as reusable only after active success, consumes it as invalid after failure or
    cancellation, wakes a cancelled waiter with the pool cancellation outcome, and drains every
    returned session through its close operation.
-4. The escaping cursor scenario is not yet a lawful fixture. Current `swift-sql` represents
-   `SQL.Cursor` as a copyable, `Sendable` value holding reusable `@Sendable` `next` and `close`
-   closures. That representation cannot uniquely retain and consume the move-only, non-`Sendable`
-   pool handle. Returning it would prematurely resolve the handle while its closures still use the
-   session. The smallest owner completion is a move-only cursor/context/outcome surface in
-   `swift-sql`: every next retains ownership, exhaustion or explicit close consumes it reusable,
-   and failure or cancellation consumes it invalid. Until then the provider must not invent a
-   local box, lifecycle gate, task cleanup, SPI, trait, or compatibility lease facade.
+4. A fixture calls `SQL.Reader.cursor` from SQL
+   `e9d44cba50fccac90c8c751b0fa95b100aa7e9c8`. The database checks out one handle, opens the
+   PostgreSQL portal through its borrowed session, and moves the handle directly into the
+   move-only Cursor context. Each element returns the sole continuation. Natural exhaustion and
+   successful explicit close consume the handle reusable; iteration, decoding, close, or
+   cancellation failure consumes it invalid; dropping a live cursor invokes synchronous abandon.
+   No second checkout, provider-local cursor/context box, task cleanup, SPI, trait, unchecked
+   conformance, or compatibility lease facade participates.
 
 The fixture owns credentials and trust policy. The provider only consumes their typed DNS and TLS
 contracts and maps connection, protocol, and server outcomes onto `SQL.Error`. The handshake sends

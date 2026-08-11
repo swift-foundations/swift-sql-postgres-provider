@@ -32,15 +32,15 @@ non-cursor operations keep the move-only handle in the database actor, borrow it
 session, and consume the handle as reusable only after active success. Failure or
 cancellation consumes it as invalid.
 
-The escaping cursor path remains blocked at the exact `swift-sql` owner. Its
-current copyable, `Sendable` `SQL.Cursor` stores reusable `@Sendable` `next` and
-`close` closures, so it cannot uniquely own and consume the move-only,
-non-`Sendable` pool handle. Returning such a cursor would resolve the handle and
-make the session reusable while its closures still use it. Completion requires
-a move-only cursor/context/outcome surface in `swift-sql` that retains the
-handle through every `next`, then consumes it exactly once on exhaustion,
-explicit close, failure, or cancellation. The provider does not add a local
-box, lifecycle gate, task cleanup, SPI, trait, or compatibility lease facade.
+SQL `e9d44cba50fccac90c8c751b0fa95b100aa7e9c8` moves cursor acquisition to
+`SQL.Reader`, the actor-to-caller ownership seam. The database checks out one
+handle, opens the portal through its borrowed session, and consumes the handle
+into the move-only, non-`Sendable` `SQL.Cursor` context. Each advance returns the
+only continuation. Exhaustion and successful explicit close resolve reusable;
+iteration, decoding, close, or cancellation failure resolves invalid; dropping
+a live cursor invokes the handle's synchronous abandon path. The provider adds
+no second checkout, local cursor/context box, lifecycle gate, task cleanup, SPI,
+trait, unchecked conformance, or compatibility lease facade.
 
 The provider consumes the published neutral `TLS Engine Interface` product
 directly. It does not introduce engine or trust-policy behavior.

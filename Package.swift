@@ -9,7 +9,7 @@ let package = Package(
         .library(name: "SQL Postgres Provider", targets: ["SQL Postgres Provider"])
     ],
     dependencies: [
-        .package(url: "https://github.com/swift-foundations/swift-sql.git", revision: "bda3ff3884ba21476fc243560a50ab3fd8d728f5"),
+        .package(url: "https://github.com/swift-foundations/swift-sql.git", revision: "e9d44cba50fccac90c8c751b0fa95b100aa7e9c8"),
         .package(url: "https://github.com/swift-ietf/swift-rfc-4122.git", branch: "main"),
         .package(url: "https://github.com/swift-primitives/swift-time-primitives.git", branch: "main"),
         // The sanctioned third party. `Crypto` is the cross-platform CryptoKit: on Apple

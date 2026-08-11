@@ -129,16 +129,12 @@ extension Postgres {
         }
 
         /// Releases the unnamed portal before returning its leased connection to the pool.
-        func closeCursor() async {
+        func closeCursor() async throws(Postgres.Error) {
             guard cursorOpen else { return }
             cursorOpen = false
-            do {
-                try await send(frame(type: 67, body: [80] + cString("")))
-                try await send([83, 0, 0, 0, 4])
-                while (try await receive()).type != 90 {}
-            } catch {
-                await close()
-            }
+            try await send(frame(type: 67, body: [80] + cString("")))
+            try await send([83, 0, 0, 0, 4])
+            while (try await receive()).type != 90 {}
         }
 
         private func startup() async throws(Postgres.Error) {

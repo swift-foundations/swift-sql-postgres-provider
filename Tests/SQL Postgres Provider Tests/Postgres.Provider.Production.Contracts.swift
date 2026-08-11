@@ -8,7 +8,8 @@ import Testing
 /// `e27e99f5c841170593dde7b0396e9090a7515f62`, DNS
 /// `930ab8b5dadc99d6c44b101d92422545b697db7d`, and Byte Channel
 /// `dfc56d1ed173aae4db784018c746050cbfbe4ee7`. Runtime server execution is deliberately
-/// fixture-owned. Pool ownership is frozen at public Pool Primitives
+/// fixture-owned. SQL cursor ownership is frozen at
+/// `e9d44cba50fccac90c8c751b0fa95b100aa7e9c8`. Pool ownership is frozen at public Pool Primitives
 /// `b7c710c945b7c8467b4521c3a2d5b00539275593`; these checks keep the provider's public SQL
 /// membrane visible.
 extension Postgres {
@@ -33,10 +34,9 @@ extension Postgres.`Production Contract Test` {
         let _: Postgres.Socket.Transport.Type = Postgres.Socket.Transport.self
     }
 
-    /// Non-cursor database operations own a public `Pool.Bounded.Handle` only within the database
-    /// actor region. Active success consumes it reusable; cancellation and every typed failure
-    /// consume it invalid. The current copyable `SQL.Cursor` cannot own that move-only handle, so
-    /// cursor completion remains an exact `swift-sql` owner requirement rather than a local box.
+    /// Scoped operations keep their public handle in the database actor. `SQL.Reader.cursor`
+    /// instead consumes one checkout into SQL's move-only context: exhaustion and successful close
+    /// reuse it, failure and cancellation invalidate it, and live drop abandons it synchronously.
     @Test func `database keeps bounded handle ownership at the public pool boundary`() {
         let _: any SQL.Database.Type = Postgres.Database.self
     }

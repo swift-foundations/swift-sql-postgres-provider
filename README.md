@@ -1,16 +1,37 @@
 # SQL Postgres Provider
 
-`SQL Postgres Provider` is the bounded Institute-native PostgreSQL provider for
-the engine-free `SQL` membrane. It contains the wire client, PostgreSQL row
-decoding, transaction scopes, cancellation-aware blocking I/O, and a bounded
-lazy connection pool.
+`SQL Postgres Provider` owns PostgreSQL wire protocol composition for the
+engine-free `SQL` membrane. `Postgres.Database` preserves the `SQL.Database`
+transaction and rollback contract; the provider also owns PostgreSQL row
+decoding, protocol 3.0 framing, SCRAM-SHA-256 authentication, and text-format
+extended queries.
 
-The first slice deliberately supports IPv4 TCP, PostgreSQL protocol 3.0,
-cleartext and SCRAM-SHA-256 authentication, and text-format extended queries.
-TLS, DNS/IPv6 address resolution, prepared-statement caching, reconnect policy,
-and multi-writer coordination are not part of this package. The provider
-preserves the `SQL.Database` transaction and rollback contract; the control
-plane remains the single kernel owner and writer.
+## Production composition status
+
+Issue #6 requires a source-complete production provider composed from the
+Institute `Sockets`, `DNS`, authenticated TLS-engine, and `Pool.Lease`
+contracts. Its required observable behaviour is:
+
+- DNS and both IPv4 and IPv6 address families, preserving resolver order;
+- authenticated TLS with hostname verification before PostgreSQL startup;
+- streaming rows, server-error translation, cancellation, transactions and
+  rollback;
+- bounded, cancellation-aware leases and graceful shutdown.
+
+The repository deliberately does **not** claim that outcome yet. The checked-in
+transport is the earlier blocking IPv4/POSIX implementation and the database
+uses its earlier task-yield pool. Both are forbidden from the Issue #6 end
+state. They remain only until the authenticated TLS-engine producer publishes
+its public connection/wrapping witness; no provider-local TLS, DNS, socket,
+pool, cursor, or trust-policy substitute will be added.
+
+The exact integration seam is `Postgres.Transport`: the TLS producer must
+accept a `Sockets` TCP byte connection, authenticate the configured DNS name,
+and expose async read/write/close operations suitable for the PostgreSQL wire
+session. Once that public witness exists, the provider will compose it with
+`DNS.Resolving` and `Pool.Lease` and delete the legacy transport and spin pool.
+See [Production scenarios](Documentation/Production%20scenarios.md) for the
+unexecuted real-server source contract.
 
 ## Installation
 

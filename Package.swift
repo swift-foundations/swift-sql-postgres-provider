@@ -9,7 +9,7 @@ let package = Package(
         .library(name: "SQL Postgres Provider", targets: ["SQL Postgres Provider"])
     ],
     dependencies: [
-        .package(url: "https://github.com/swift-foundations/swift-sql.git", branch: "main"),
+        .package(url: "https://github.com/swift-foundations/swift-sql.git", revision: "bda3ff3884ba21476fc243560a50ab3fd8d728f5"),
         .package(url: "https://github.com/swift-ietf/swift-rfc-4122.git", branch: "main"),
         .package(url: "https://github.com/swift-primitives/swift-time-primitives.git", branch: "main"),
         // The sanctioned third party. `Crypto` is the cross-platform CryptoKit: on Apple
@@ -17,12 +17,17 @@ let package = Package(
         // SCRAM-SHA-256 needs HMAC, SHA256 and SymmetricKey, and CryptoKit does not exist off
         // Apple platforms.
         .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0"..<"5.0.0"),
-        // The Institute POSIX stack. swift-iso-9945 binds the syscalls and owns the
-        // `#if canImport(Darwin)/Glibc` portability seam; swift-posix layers the EINTR policy on
-        // top — including `connect`, whose EINTR completes through poll rather than by retrying.
-        .package(url: "https://github.com/swift-foundations/swift-posix.git", branch: "main"),
-        .package(url: "https://github.com/swift-iso/swift-iso-9945.git", branch: "main"),
+        // Production transport composition is owned by the Institute network stack.  The
+        // provider consumes its public DNS, socket, TLS, and bounded-lease seams; it carries no
+        // platform transport, resolver, trust, or pool implementation of its own.
+        .package(url: "https://github.com/swift-foundations/swift-domain-name-system.git", revision: "4bd74b5"),
+        .package(url: "https://github.com/swift-foundations/swift-kernel.git", branch: "main"),
+        .package(url: "https://github.com/swift-foundations/swift-io.git", branch: "main"),
+        .package(url: "https://github.com/swift-foundations/swift-sockets.git", branch: "main"),
+        .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "487f92c0013879b50377267b06f46567eb7a35f1"),
+        .package(url: "https://github.com/swift-foundations/swift-pools.git", revision: "4ace8626b6a00d8ed1763dfe32722063340d6abd"),
         .package(url: "https://github.com/swift-primitives/swift-byte-primitives.git", branch: "main"),
+        .package(url: "https://github.com/swift-primitives/swift-either-primitives.git", branch: "main"),
         // Test-target only: the integration tests read their connection settings from the
         // process environment, and this is the Institute reader for it.
         .package(url: "https://github.com/swift-foundations/swift-environment.git", branch: "main")
@@ -35,12 +40,18 @@ let package = Package(
                 .product(name: "RFC 4122", package: "swift-rfc-4122"),
                 .product(name: "Time Primitive", package: "swift-time-primitives"),
                 .product(name: "Crypto", package: "swift-crypto"),
-                .product(name: "POSIX Kernel Socket", package: "swift-posix"),
-                .product(name: "POSIX Kernel Poll", package: "swift-posix"),
-                .product(name: "ISO 9945 Kernel Socket", package: "swift-iso-9945"),
-                .product(name: "ISO 9945 Kernel Socket Address", package: "swift-iso-9945"),
-                .product(name: "ISO 9945 Kernel Poll", package: "swift-iso-9945"),
-                .product(name: "Byte Primitives", package: "swift-byte-primitives")
+                .product(name: "Domain Name System", package: "swift-domain-name-system"),
+                .product(name: "Kernel", package: "swift-kernel"),
+                .product(name: "IO", package: "swift-io"),
+                .product(name: "Sockets", package: "swift-sockets"),
+                .product(name: "TLS", package: "swift-tls"),
+                // `TLS Engine Interface` is currently an internal TLS target rather than a
+                // published product.  The public Apple-engine facade re-exports that witness;
+                // this is a narrow consumer-side bridge until TLS publishes the interface.
+                .product(name: "TLS Apple Engine", package: "swift-tls"),
+                .product(name: "Pools", package: "swift-pools"),
+                .product(name: "Byte Primitives", package: "swift-byte-primitives"),
+                .product(name: "Either Primitives", package: "swift-either-primitives")
             ],
             path: "Sources/SQL Postgres Provider"
         ),

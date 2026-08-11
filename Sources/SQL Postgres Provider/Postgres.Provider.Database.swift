@@ -1,44 +1,60 @@
 public import SQL
+internal import Domain_Name_System
+internal import Either_Primitives
+internal import Pools
+internal import TLS_Apple_Engine
 
 extension Postgres {
-    /// A lazily connected, bounded pool of native PostgreSQL sessions.
+    /// A bounded, cancellation-aware lease of authenticated PostgreSQL sessions.
     public actor Database: SQL.Database {
-        private let configuration: Postgres.Configuration
-        private var available: [Session<Postgres.Socket.Transport>] = []
-        private var created = 0
-        private var closed = false
+        private let lease: Pool.Lease<Session<Postgres.Socket.Transport>>
 
-        public init(configuration: Postgres.Configuration) {
-            self.configuration = configuration
+        /// Creates a database from externally owned DNS and TLS capabilities.
+        ///
+        /// The resolver preserves its address order; the TLS witness authenticates the supplied
+        /// endpoint identity before this provider begins PostgreSQL or SCRAM traffic.
+        public init<Resolver: DNS.Resolving>(
+            configuration: Postgres.Configuration,
+            resolver: Resolver,
+            tls: TLS.Engine.Witness,
+            tlsConfiguration: TLS.Configuration
+        ) {
+            lease = Pool.Lease(
+                capacity: Pool.Capacity(integerLiteral: configuration.maxConnections),
+                create: {
+                    do throws(Postgres.Error) {
+                        return try await Session(
+                            configuration: configuration,
+                            resolver: resolver,
+                            tls: tls,
+                            tlsConfiguration: tlsConfiguration
+                        )
+                    } catch {
+                        throw .creationFailed
+                    }
+                },
+                destroy: { session in await session.close() }
+            )
         }
 
-        /// Closes idle sessions and prevents new leases. The enclosing lifetime
-        /// should call this after all database work has completed.
-        public func shutdown() async {
-            closed = true
-            let sessions = available
-            available.removeAll(keepingCapacity: false)
-            for session in sessions { await session.close() }
-            created = 0
-        }
+        /// Rejects new leases, drains outstanding work, and closes each idle session exactly once.
+        public func shutdown() async { await lease.shutdown() }
 
         public func read<Value: Sendable>(
-            // `any SQL.Connection` is the parameter type in swift-sql's own `SQL.Database` requirement; a conformance cannot narrow it.
+            // `any SQL.Connection` is the parameter type in swift-sql's `SQL.Database` requirement.
             // swiftlint:disable:next no_any_protocol_existential
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
-            try await withLease { (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
-                try await body(Postgres.Connection(session: session))
-            }
+            try await withLease(body)
         }
 
         public func write<Value: Sendable>(
-            // `any SQL.Connection` is the parameter type in swift-sql's own `SQL.Database` requirement; a conformance cannot narrow it.
+            // `any SQL.Connection` is the parameter type in swift-sql's `SQL.Database` requirement.
             // swiftlint:disable:next no_any_protocol_existential
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
-            try await withLease { (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
-                try await self.begin(session)
+            try await withLease { session throws(SQL.Error) in
+                try await self.command(session, "BEGIN")
                 do throws(SQL.Error) {
                     let value = try await body(Postgres.Connection(session: session))
                     try await self.command(session, "COMMIT")
@@ -51,12 +67,12 @@ extension Postgres {
         }
 
         public func withRollback<Value: Sendable>(
-            // `any SQL.Connection` is the parameter type in swift-sql's own `SQL.Database` requirement; a conformance cannot narrow it.
+            // `any SQL.Connection` is the parameter type in swift-sql's `SQL.Database` requirement.
             // swiftlint:disable:next no_any_protocol_existential
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
-            try await withLease { (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
-                try await self.begin(session)
+            try await withLease { session throws(SQL.Error) in
+                try await self.command(session, "BEGIN")
                 do throws(SQL.Error) {
                     let value = try await body(Postgres.Connection(session: session))
                     try await self.command(session, "ROLLBACK")
@@ -69,68 +85,48 @@ extension Postgres {
         }
 
         private func command(_ session: Session<Postgres.Socket.Transport>, _ sql: String) async throws(SQL.Error) {
-            do throws(Postgres.Error) {
-                _ = try await session.execute(sql: sql)
-            } catch {
-                throw error.sql
-            }
-        }
-
-        private func begin(_ session: Session<Postgres.Socket.Transport>) async throws(SQL.Error) {
-            try await command(session, "BEGIN")
+            do throws(Postgres.Error) { _ = try await session.execute(sql: sql) }
+            catch { throw error.sql }
         }
 
         private func rollback(_ session: Session<Postgres.Socket.Transport>) async {
             do throws(SQL.Error) { try await command(session, "ROLLBACK") } catch {}
         }
 
-        private func acquire() async throws(SQL.Error) -> Session<Postgres.Socket.Transport> {
-            while true {
-                guard closed == false else { throw .connection("database is shut down") }
-                if let session = available.popLast() { return session }
-                if created < configuration.maxConnections {
-                    created += 1
-                    do throws(Postgres.Error) {
-                        return try Session<Postgres.Socket.Transport>(configuration: configuration)
-                    } catch {
-                        created -= 1
-                        throw error.sql
-                    }
-                }
-                guard Task.isCancelled == false else { throw .connection("cancelled") }
-                await Task.yield()
-            }
-        }
-
         private func withLease<Value: Sendable>(
             _ body: @Sendable (Session<Postgres.Socket.Transport>) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
-            let session = try await acquire()
-            do throws(SQL.Error) {
-                let value = try await body(session)
-                if closed {
-                    await session.close()
-                    created -= 1
-                } else {
-                    available.append(session)
+            do throws(Either<Pool.Lifecycle.Error, SQL.Error>) {
+                return try await lease.acquire { session throws(SQL.Error) in
+                    .reusable(try await body(session))
                 }
-                return value
             } catch {
-                await session.close()
-                created -= 1
-                throw error
+                switch error {
+                case .left(.cancelled): throw .cancelled
+                case .left(.shutdown): throw .connection("database is shut down")
+                case .left(.creationFailed): throw .connection("connection creation failed")
+                case .right(let failure): throw failure
+                }
             }
         }
     }
 }
 
 extension Postgres {
-    /// Scope helper that closes the pool after the body, including on failure.
-    public static func withDatabase<Value: Sendable, Failure: Swift.Error>(
+    /// Scopes a production database's lease lifecycle to one asynchronous operation.
+    public static func withDatabase<Resolver: DNS.Resolving, Value: Sendable, Failure: Swift.Error>(
         configuration: Postgres.Configuration,
+        resolver: Resolver,
+        tls: TLS.Engine.Witness,
+        tlsConfiguration: TLS.Configuration,
         _ body: @Sendable (Postgres.Database) async throws(Failure) -> Value
     ) async throws(Failure) -> Value {
-        let database = Postgres.Database(configuration: configuration)
+        let database = Postgres.Database(
+            configuration: configuration,
+            resolver: resolver,
+            tls: tls,
+            tlsConfiguration: tlsConfiguration
+        )
         do throws(Failure) {
             let value = try await body(database)
             await database.shutdown()

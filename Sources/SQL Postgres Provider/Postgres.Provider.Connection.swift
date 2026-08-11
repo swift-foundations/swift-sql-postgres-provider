@@ -38,5 +38,29 @@ extension Postgres {
         ) async throws(SQL.Error) -> Value? {
             try await fetchAll(statement, decode: decode).first
         }
+
+        public func fetchCursor<Value: Sendable>(
+            _ statement: some SQL.Statement,
+            // `any SQL.Row` is the engine-free SQL membrane requirement.
+            // swiftlint:disable:next no_any_protocol_existential
+            decode: @escaping @Sendable (any SQL.Row) throws(SQL.Error) -> Value
+        ) async throws(SQL.Error) -> SQL.Cursor<Value> {
+            do throws(Postgres.Error) {
+                try await session.openCursor(sql: statement.sql, bindings: statement.bindings)
+            } catch {
+                throw error.sql
+            }
+            return SQL.Cursor(
+                next: {
+                    do throws(Postgres.Error) {
+                        guard let row = try await self.session.nextCursor() else { return nil }
+                        return try decode(row)
+                    } catch {
+                        throw error.sql
+                    }
+                },
+                close: { await self.session.closeCursor() }
+            )
+        }
     }
 }

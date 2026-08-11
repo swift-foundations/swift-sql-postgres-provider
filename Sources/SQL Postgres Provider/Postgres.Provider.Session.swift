@@ -1,6 +1,8 @@
 internal import RFC_4122
 internal import SQL
 internal import Time_Primitive
+internal import Domain_Name_System
+internal import TLS_Apple_Engine
 
 extension Postgres {
     /// The PostgreSQL wire protocol: framing, startup, SCRAM authentication, extended query.
@@ -17,6 +19,8 @@ extension Postgres {
         private let transport: Wire
         private var closed = false
         private var started = false
+        private var cursorColumns: [String] = []
+        private var cursorOpen = false
 
         /// Runs the wire protocol over a caller-supplied transport.
         ///
@@ -26,24 +30,24 @@ extension Postgres {
             self.transport = transport
         }
 
-        func close() {
+        func close() async {
             guard closed == false else { return }
             closed = true
-            transport.close()
+            await transport.close()
         }
 
         func execute(sql: String, bindings: [SQL.Value] = []) async throws(Postgres.Error) -> (count: Int, rows: [Postgres.Row]) {
             guard closed == false else { throw .connection("connection is closed") }
             guard Task.isCancelled == false else { throw .cancelled }
             if started == false {
-                try startup()
+                try await startup()
                 started = true
             }
-            try send(parse(sql))
-            try send(bind(bindings))
-            try send([68, 0, 80, 0])
-            try send(executeMessage())
-            try send([83, 0, 0, 0, 4])
+            try await send(parse(sql))
+            try await send(bind(bindings))
+            try await send([68, 0, 80, 0])
+            try await send(executeMessage())
+            try await send([83, 0, 0, 0, 4])
 
             var columns: [String] = []
             var rows: [Postgres.Row] = []
@@ -72,7 +76,69 @@ extension Postgres {
             }
         }
 
-        private func startup() throws(Postgres.Error) {
+        /// Opens the unnamed PostgreSQL portal. Rows remain on the server and are fetched one at
+        /// a time by `nextCursor`; no result collection is retained by this session.
+        func openCursor(sql: String, bindings: [SQL.Value]) async throws(Postgres.Error) {
+            guard cursorOpen == false else { throw .execution("a cursor is already active") }
+            if started == false {
+                try await startup()
+                started = true
+            }
+            try await send(parse(sql))
+            try await send(bind(bindings))
+            try await send(describePortal())
+            try await send([83, 0, 0, 0, 4])
+            while true {
+                let message = try await receive()
+                switch message.type {
+                case 84: cursorColumns = try rowDescription(message.body)
+                case 90:
+                    cursorOpen = true
+                    return
+                case 69: throw .server(errorMessage(message.body))
+                default: break
+                }
+            }
+        }
+
+        /// Fetches at most one row from the open portal and drains that fetch's response cycle.
+        func nextCursor() async throws(Postgres.Error) -> Postgres.Row? {
+            guard cursorOpen else { return nil }
+            try await send(executeMessage(maximumRows: 1))
+            try await send([83, 0, 0, 0, 4])
+            var row: Postgres.Row?
+            var suspended = false
+            while true {
+                let message = try await receive()
+                switch message.type {
+                case 68: row = try dataRow(message.body, columns: cursorColumns)
+                case 115: suspended = true
+                case 67: break
+                case 90:
+                    if suspended == false { cursorOpen = false }
+                    return row
+                case 69:
+                    cursorOpen = false
+                    throw .server(errorMessage(message.body))
+                default: break
+                }
+            }
+        }
+
+        /// Releases the unnamed portal before returning its leased connection to the pool.
+        func closeCursor() async {
+            guard cursorOpen else { return }
+            cursorOpen = false
+            do {
+                try await send(frame(type: 67, body: [80] + cString("")))
+                try await send([83, 0, 0, 0, 4])
+                while (try await receive()).type != 90 {}
+            } catch {
+                await close()
+            }
+        }
+
+        private func startup() async throws(Postgres.Error) {
             var body = int32(196_608)
             body.append(contentsOf: cString("user"))
             body.append(contentsOf: cString(configuration.user))
@@ -81,11 +147,11 @@ extension Postgres {
             body.append(contentsOf: cString("application_name"))
             body.append(contentsOf: cString("swift-sql-postgres-native"))
             body.append(0)
-            try send(lengthPrefixed(body))
+            try await send(lengthPrefixed(body))
 
             var first: String?
             while true {
-                let message = try receiveSynchronously()
+                let message = try await receive()
                 switch message.type {
                 case 82:
                     let code = try int32Value(message.body, at: 0)
@@ -94,7 +160,7 @@ extension Postgres {
 
                     case 3:
                         guard let password = configuration.password else { throw .authentication("server requested a password") }
-                        try send(frame(type: 112, body: cString(password)))
+                        try await send(frame(type: 112, body: cString(password)))
 
                     case 10:
                         guard configuration.password != nil else { throw .authentication("server requested SCRAM password") }
@@ -106,7 +172,7 @@ extension Postgres {
                         var initial = cString("SCRAM-SHA-256")
                         initial.append(contentsOf: int32(Int32(value.utf8.count)))
                         initial.append(contentsOf: value.utf8)
-                        try send(frame(type: 112, body: initial))
+                        try await send(frame(type: 112, body: initial))
 
                     case 11:
                         guard let first, let password = configuration.password else { throw .authentication("invalid SCRAM state") }
@@ -115,8 +181,8 @@ extension Postgres {
                             throw .authentication("invalid SCRAM client-first-message")
                         }
                         let result = try Postgres.SCRAM.final(password: password, first: first, serverFirst: serverFirst, nonce: nonce)
-                        try send(frame(type: 112, body: cString(result.message)))
-                        let final = try receiveSynchronously()
+                        try await send(frame(type: 112, body: cString(result.message)))
+                        let final = try await receive()
                         guard final.type == 82, try int32Value(final.body, at: 0) == 12 else {
                             throw .authentication("invalid SCRAM server-final exchange")
                         }
@@ -155,21 +221,19 @@ extension Postgres {
 
         private func receive() async throws(Postgres.Error) -> (type: UInt8, body: [UInt8]) {
             guard Task.isCancelled == false else { throw .cancelled }
-            return try receiveSynchronously()
+            let tag = try await transport.readExact(1)
+            let lengthBytes = try await transport.readExact(4)
+            let type = tag[0]
+            let length = Int(try int32Value(lengthBytes, at: 0))
+            guard length >= 4 else { throw .protocolViolation("message length is less than four") }
+            guard length <= 16 * 1024 * 1024 else { throw .frameTooLarge(length) }
+            return (type, try await transport.readExact(length - 4))
         }
 
         /// Reads one backend message: a one-byte tag, a four-byte length inclusive of itself,
         /// then the body.
-        private func receiveSynchronously() throws(Postgres.Error) -> (type: UInt8, body: [UInt8]) {
-            let type = try transport.readExact(1)[0]
-            let length = Int(try int32Value(transport.readExact(4), at: 0))
-            guard length >= 4 else { throw .protocolViolation("message length is less than four") }
-            guard length <= 16 * 1024 * 1024 else { throw .frameTooLarge(length) }
-            return (type, try transport.readExact(length - 4))
-        }
-
-        private func send(_ bytes: [UInt8]) throws(Postgres.Error) {
-            try transport.writeAll(bytes)
+        private func send(_ bytes: [UInt8]) async throws(Postgres.Error) {
+            try await transport.writeAll(bytes)
         }
 
         private func parse(_ sql: String) -> [UInt8] {
@@ -196,7 +260,11 @@ extension Postgres {
             return frame(type: 66, body: body)
         }
 
-        private func executeMessage() -> [UInt8] { frame(type: 69, body: cString("") + int32(0)) }
+        private func describePortal() -> [UInt8] { frame(type: 68, body: [80] + cString("")) }
+
+        private func executeMessage(maximumRows: Int32 = 0) -> [UInt8] {
+            frame(type: 69, body: cString("") + int32(maximumRows))
+        }
 
         private func rowDescription(_ body: [UInt8]) throws(Postgres.Error) -> [String] {
             guard body.count >= 2 else { throw .protocolViolation("short row description") }
@@ -383,11 +451,22 @@ extension SQL.Value {
 }
 
 extension Postgres.Session where Wire == Postgres.Socket.Transport {
-    /// Opens a socket to the configured server and runs the wire protocol over it.
-    init(configuration: Postgres.Configuration) throws(Postgres.Error) {
+    /// Composes an ordered resolver, TCP connection, and authenticated TLS session for one
+    /// PostgreSQL wire session.
+    init<Resolver: DNS.Resolving>(
+        configuration: Postgres.Configuration,
+        resolver: Resolver,
+        tls: TLS.Engine.Witness,
+        tlsConfiguration: TLS.Configuration
+    ) async throws(Postgres.Error) {
         self.init(
             configuration: configuration,
-            transport: try Postgres.Socket.Transport(configuration: configuration)
+            transport: try await Postgres.Socket.Transport(
+                configuration: configuration,
+                resolver: resolver,
+                tls: tls,
+                tlsConfiguration: tlsConfiguration
+            )
         )
     }
 }

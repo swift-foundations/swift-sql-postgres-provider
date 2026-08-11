@@ -35,10 +35,16 @@ directly. It does not introduce engine or trust-policy behavior.
 
 The production transport is bound to Sockets
 `3fad32626d347cbfc0e803496e7ad9c0e66162db`, TLS
-`fd9c2908caebc2cb97abec6d98011c0d051e1359`, and Byte Channel
+`93468b04579b86164fc60f71d65ed4dea30444dd`, DNS
+`930ab8b5dadc99d6c44b101d92422545b697db7d`, and Byte Channel
 `dfc56d1ed173aae4db784018c746050cbfbe4ee7`. Sockets owns the adaptation to
 Byte Channel's ownership-preserving `Writer.Send.Outcome`; the provider keeps
 the generic Pump and TLS Witness composition unchanged.
+
+The provider imports only the provider-neutral `Domain Name System` product.
+The additive `Domain Name System Cache` product is not linked, although SwiftPM
+resolves every dependency declared by the DNS package regardless of product
+selection.
 
 ## Installation
 

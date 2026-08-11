@@ -20,11 +20,11 @@ let package = Package(
         // Production transport composition is owned by the Institute network stack.  The
         // provider consumes its public DNS, socket, TLS, and bounded-lease seams; it carries no
         // platform transport, resolver, trust, or pool implementation of its own.
-        .package(url: "https://github.com/swift-foundations/swift-domain-name-system.git", revision: "4bd74b5"),
+        .package(url: "https://github.com/swift-foundations/swift-domain-name-system.git", revision: "930ab8b5dadc99d6c44b101d92422545b697db7d"),
         .package(url: "https://github.com/swift-foundations/swift-kernel.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-io.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-sockets.git", revision: "3fad32626d347cbfc0e803496e7ad9c0e66162db"),
-        .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "fd9c2908caebc2cb97abec6d98011c0d051e1359"),
+        .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "93468b04579b86164fc60f71d65ed4dea30444dd"),
         .package(url: "https://github.com/swift-foundations/swift-pools.git", revision: "4ace8626b6a00d8ed1763dfe32722063340d6abd"),
         .package(url: "https://github.com/swift-foundations/swift-byte-channel.git", revision: "dfc56d1ed173aae4db784018c746050cbfbe4ee7"),
         .package(url: "https://github.com/swift-primitives/swift-byte-primitives.git", branch: "main"),

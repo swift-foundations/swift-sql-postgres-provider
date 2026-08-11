@@ -23,10 +23,10 @@ let package = Package(
         .package(url: "https://github.com/swift-foundations/swift-domain-name-system.git", revision: "4bd74b5"),
         .package(url: "https://github.com/swift-foundations/swift-kernel.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-io.git", branch: "main"),
-        .package(url: "https://github.com/swift-foundations/swift-sockets.git", revision: "d31c855f1888c15be53d5e7e7a959ee03748f718"),
-        .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "4212bf49917590b56ec89f6cc9208374b60cb832"),
+        .package(url: "https://github.com/swift-foundations/swift-sockets.git", revision: "5702645cd7abef90d5102a03f112b5e5cace1ae1"),
+        .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "cf7fcc09a35aff465efa9aabcdbe7fd8de792f54"),
         .package(url: "https://github.com/swift-foundations/swift-pools.git", revision: "4ace8626b6a00d8ed1763dfe32722063340d6abd"),
-        .package(url: "https://github.com/swift-foundations/swift-byte-channel.git", revision: "6a7eaf41b153f332ac2f144d105197c4b00c2a2e"),
+        .package(url: "https://github.com/swift-foundations/swift-byte-channel.git", revision: "0a7c65b4f12790337ff323e956e5adb691b92549"),
         .package(url: "https://github.com/swift-primitives/swift-byte-primitives.git", branch: "main"),
         .package(url: "https://github.com/swift-primitives/swift-either-primitives.git", branch: "main"),
         // Test-target only: the integration tests read their connection settings from the

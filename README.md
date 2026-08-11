@@ -33,6 +33,13 @@ connection lease.
 The provider consumes the published neutral `TLS Engine Interface` product
 directly. It does not introduce engine or trust-policy behavior.
 
+The production transport is bound to Sockets
+`5702645cd7abef90d5102a03f112b5e5cace1ae1`, TLS
+`cf7fcc09a35aff465efa9aabcdbe7fd8de792f54`, and Byte Channel
+`0a7c65b4f12790337ff323e956e5adb691b92549`. Sockets owns the adaptation to
+Byte Channel's ownership-preserving `Writer.Send.Outcome`; the provider keeps
+the generic Pump and TLS Witness composition unchanged.
+
 ## Installation
 
 Add the package to your `Package.swift` dependencies:

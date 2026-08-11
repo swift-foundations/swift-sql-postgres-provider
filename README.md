@@ -34,9 +34,9 @@ The provider consumes the published neutral `TLS Engine Interface` product
 directly. It does not introduce engine or trust-policy behavior.
 
 The production transport is bound to Sockets
-`5702645cd7abef90d5102a03f112b5e5cace1ae1`, TLS
-`cf7fcc09a35aff465efa9aabcdbe7fd8de792f54`, and Byte Channel
-`0a7c65b4f12790337ff323e956e5adb691b92549`. Sockets owns the adaptation to
+`3fad32626d347cbfc0e803496e7ad9c0e66162db`, TLS
+`fd9c2908caebc2cb97abec6d98011c0d051e1359`, and Byte Channel
+`dfc56d1ed173aae4db784018c746050cbfbe4ee7`. Sockets owns the adaptation to
 Byte Channel's ownership-preserving `Writer.Send.Outcome`; the provider keeps
 the generic Pump and TLS Witness composition unchanged.
 

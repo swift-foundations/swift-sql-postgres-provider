@@ -9,7 +9,7 @@ extended queries.
 ## Production composition status
 
 Issue #6 requires a source-complete production provider composed from the
-Institute `Sockets`, `DNS`, authenticated TLS-engine, and `Pool.Lease`
+Institute `Sockets`, `DNS`, authenticated TLS-engine, and `Pool.Bounded`
 contracts. Its required observable behaviour is:
 
 - DNS and both IPv4 and IPv6 address families, preserving resolver order;
@@ -25,11 +25,22 @@ across IPv4 and IPv6 candidates; the identity's query selects the endpoint and
 its hostname authenticates that same peer before PostgreSQL startup or SCRAM
 authentication.
 
-`Pool.Lease` owns bounded admission, cancellation while waiting, terminal
-resource disposition, and graceful shutdown. `SQL.Cursor` is implemented with
-the PostgreSQL portal's one-row fetch limit, so decoding remains pull-driven and
-does not collect a result set. A cursor must be consumed or closed inside its
-connection lease.
+Public Pool Primitives `b7c710c945b7c8467b4521c3a2d5b00539275593`
+owns `Pool.Bounded` admission, cancellation while waiting, unique
+checked-out handles, terminal resource disposition, and graceful shutdown. Scoped
+non-cursor operations keep the move-only handle in the database actor, borrow its
+session, and consume the handle as reusable only after active success. Failure or
+cancellation consumes it as invalid.
+
+The escaping cursor path remains blocked at the exact `swift-sql` owner. Its
+current copyable, `Sendable` `SQL.Cursor` stores reusable `@Sendable` `next` and
+`close` closures, so it cannot uniquely own and consume the move-only,
+non-`Sendable` pool handle. Returning such a cursor would resolve the handle and
+make the session reusable while its closures still use it. Completion requires
+a move-only cursor/context/outcome surface in `swift-sql` that retains the
+handle through every `next`, then consumes it exactly once on exhaustion,
+explicit close, failure, or cancellation. The provider does not add a local
+box, lifecycle gate, task cleanup, SPI, trait, or compatibility lease facade.
 
 The provider consumes the published neutral `TLS Engine Interface` product
 directly. It does not introduce engine or trust-policy behavior.

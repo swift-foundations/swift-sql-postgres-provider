@@ -18,18 +18,17 @@ let package = Package(
         // Apple platforms.
         .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0"..<"5.0.0"),
         // Production transport composition is owned by the Institute network stack.  The
-        // provider consumes its public DNS, socket, TLS, and bounded-lease seams; it carries no
+        // provider consumes its public DNS, socket, TLS, and bounded-pool seams; it carries no
         // platform transport, resolver, trust, or pool implementation of its own.
         .package(url: "https://github.com/swift-foundations/swift-domain-name-system.git", revision: "930ab8b5dadc99d6c44b101d92422545b697db7d"),
         .package(url: "https://github.com/swift-foundations/swift-kernel.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-io.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-sockets.git", revision: "3fad32626d347cbfc0e803496e7ad9c0e66162db"),
         .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "e27e99f5c841170593dde7b0396e9090a7515f62"),
-        .package(url: "https://github.com/swift-foundations/swift-pools.git", revision: "4ace8626b6a00d8ed1763dfe32722063340d6abd"),
+        .package(url: "https://github.com/swift-primitives/swift-pool-primitives.git", revision: "b7c710c945b7c8467b4521c3a2d5b00539275593"),
         .package(url: "https://github.com/swift-foundations/swift-byte-channel.git", revision: "dfc56d1ed173aae4db784018c746050cbfbe4ee7"),
         .package(url: "https://github.com/swift-primitives/swift-byte-primitives.git", branch: "main"),
         .package(url: "https://github.com/swift-primitives/swift-cardinal-primitives.git", branch: "main"),
-        .package(url: "https://github.com/swift-primitives/swift-either-primitives.git", branch: "main"),
         // Test-target only: the integration tests read their connection settings from the
         // process environment, and this is the Institute reader for it.
         .package(url: "https://github.com/swift-foundations/swift-environment.git", branch: "main")
@@ -49,11 +48,10 @@ let package = Package(
                 .product(name: "Sockets Byte Channel", package: "swift-sockets"),
                 .product(name: "TLS", package: "swift-tls"),
                 .product(name: "TLS Engine Interface", package: "swift-tls"),
-                .product(name: "Pools", package: "swift-pools"),
+                .product(name: "Pool Primitives", package: "swift-pool-primitives"),
                 .product(name: "Byte Channel", package: "swift-byte-channel"),
                 .product(name: "Byte Primitives", package: "swift-byte-primitives"),
-                .product(name: "Cardinal Primitives Standard Library Integration", package: "swift-cardinal-primitives"),
-                .product(name: "Either Primitives", package: "swift-either-primitives")
+                .product(name: "Cardinal Primitives Standard Library Integration", package: "swift-cardinal-primitives")
             ],
             path: "Sources/SQL Postgres Provider"
         ),

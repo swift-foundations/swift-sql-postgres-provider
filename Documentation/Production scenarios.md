@@ -19,12 +19,21 @@ run. They are not executed in this repository under the TX-SQL2 source-only evid
    `Byte.Channel.Writer.Send.Outcome`; the provider does not duplicate that terminal handling.
    The provider consumes only the provider-neutral `Domain Name System` product, not the
    additive cache product; SwiftPM nevertheless resolves dependencies package-wide.
-3. A fixture drives `Postgres.Database.read` and `write`, then calls `shutdown`. `Pool.Lease`
-   bounds concurrent sessions, wakes a cancelled waiter with the pool cancellation outcome, and
-   drains every returned session through its close operation.
-4. A fixture opens `SQL.Connection.fetchCursor`, consumes several rows, and closes it early.
-   The PostgreSQL portal is closed, the connection lease is released, and no result array is
-   accumulated by the cursor path.
+3. A fixture drives a non-cursor `Postgres.Database.read` or `write`, then calls `shutdown`.
+   Public Pool Primitives `b7c710c945b7c8467b4521c3a2d5b00539275593` supplies the
+   `Pool.Bounded` that bounds concurrent sessions and sends one move-only checked-out handle
+   into the database actor. The provider borrows its session for the scoped operation, consumes
+   the handle as reusable only after active success, consumes it as invalid after failure or
+   cancellation, wakes a cancelled waiter with the pool cancellation outcome, and drains every
+   returned session through its close operation.
+4. The escaping cursor scenario is not yet a lawful fixture. Current `swift-sql` represents
+   `SQL.Cursor` as a copyable, `Sendable` value holding reusable `@Sendable` `next` and `close`
+   closures. That representation cannot uniquely retain and consume the move-only, non-`Sendable`
+   pool handle. Returning it would prematurely resolve the handle while its closures still use the
+   session. The smallest owner completion is a move-only cursor/context/outcome surface in
+   `swift-sql`: every next retains ownership, exhaustion or explicit close consumes it reusable,
+   and failure or cancellation consumes it invalid. Until then the provider must not invent a
+   local box, lifecycle gate, task cleanup, SPI, trait, or compatibility lease facade.
 
 The fixture owns credentials and trust policy. The provider only consumes their typed DNS and TLS
 contracts and maps connection, protocol, and server outcomes onto `SQL.Error`. The handshake sends

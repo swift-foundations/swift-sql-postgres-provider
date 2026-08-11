@@ -24,7 +24,7 @@ let package = Package(
         .package(url: "https://github.com/swift-foundations/swift-kernel.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-io.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-sockets.git", revision: "3fad32626d347cbfc0e803496e7ad9c0e66162db"),
-        .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "8c37e32d5af95109c66ede18f0d044e1c62da3ee"),
+        .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "e27e99f5c841170593dde7b0396e9090a7515f62"),
         .package(url: "https://github.com/swift-foundations/swift-pools.git", revision: "4ace8626b6a00d8ed1763dfe32722063340d6abd"),
         .package(url: "https://github.com/swift-foundations/swift-byte-channel.git", revision: "dfc56d1ed173aae4db784018c746050cbfbe4ee7"),
         .package(url: "https://github.com/swift-primitives/swift-byte-primitives.git", branch: "main"),

@@ -73,7 +73,13 @@ extension Postgres.Socket {
                         failure: Self.tlsFailure
                     )
                     do {
-                        session = try await tls.wrap(encrypted: consume tlsChannel, configuration: tlsConfiguration)
+                        let establishedSession = try await tls.wrap(
+                            encrypted: consume tlsChannel,
+                            configuration: tlsConfiguration
+                        )
+                        // The handshake sends unique, non-Sendable session ownership into this
+                        // actor. Install it once; no alias remains in the caller's region.
+                        self.session = consume establishedSession
                     } catch {
                         await pump.close()
                         throw error

@@ -2,7 +2,7 @@ public import SQL
 internal import Domain_Name_System
 internal import Either_Primitives
 internal import Pools
-internal import TLS_Apple_Engine
+internal import TLS_Engine_Interface
 
 extension Postgres {
     /// A bounded, cancellation-aware lease of authenticated PostgreSQL sessions.

@@ -24,7 +24,7 @@ let package = Package(
         .package(url: "https://github.com/swift-foundations/swift-kernel.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-io.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-sockets.git", branch: "main"),
-        .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "487f92c0013879b50377267b06f46567eb7a35f1"),
+        .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "7e0d59317395e6f79beca7733081ae0d4dce5f2e"),
         .package(url: "https://github.com/swift-foundations/swift-pools.git", revision: "4ace8626b6a00d8ed1763dfe32722063340d6abd"),
         .package(url: "https://github.com/swift-primitives/swift-byte-primitives.git", branch: "main"),
         .package(url: "https://github.com/swift-primitives/swift-either-primitives.git", branch: "main"),
@@ -45,10 +45,7 @@ let package = Package(
                 .product(name: "IO", package: "swift-io"),
                 .product(name: "Sockets", package: "swift-sockets"),
                 .product(name: "TLS", package: "swift-tls"),
-                // `TLS Engine Interface` is currently an internal TLS target rather than a
-                // published product.  The public Apple-engine facade re-exports that witness;
-                // this is a narrow consumer-side bridge until TLS publishes the interface.
-                .product(name: "TLS Apple Engine", package: "swift-tls"),
+                .product(name: "TLS Engine Interface", package: "swift-tls"),
                 .product(name: "Pools", package: "swift-pools"),
                 .product(name: "Byte Primitives", package: "swift-byte-primitives"),
                 .product(name: "Either Primitives", package: "swift-either-primitives")

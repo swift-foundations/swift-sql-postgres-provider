@@ -2,7 +2,7 @@ internal import RFC_4122
 internal import SQL
 internal import Time_Primitive
 internal import Domain_Name_System
-internal import TLS_Apple_Engine
+internal import TLS_Engine_Interface
 
 extension Postgres {
     /// The PostgreSQL wire protocol: framing, startup, SCRAM authentication, extended query.

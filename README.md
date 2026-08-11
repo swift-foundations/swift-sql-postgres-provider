@@ -30,10 +30,8 @@ the PostgreSQL portal's one-row fetch limit, so decoding remains pull-driven and
 does not collect a result set. A cursor must be consumed or closed inside its
 connection lease.
 
-The current TLS producer exposes its engine witness through the published
-`TLS Apple Engine` facade because its neutral interface target is not yet a
-published product. This provider uses that facade solely as a narrow export
-bridge; it does not introduce engine or trust-policy behavior.
+The provider consumes the published neutral `TLS Engine Interface` product
+directly. It does not introduce engine or trust-policy behavior.
 
 ## Installation
 

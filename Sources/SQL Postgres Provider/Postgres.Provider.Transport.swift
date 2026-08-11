@@ -3,7 +3,7 @@ internal import IO
 internal import Kernel
 internal import Sockets
 internal import TLS
-internal import TLS_Apple_Engine
+internal import TLS_Engine_Interface
 
 extension Postgres {
     /// The asynchronous byte transport a PostgreSQL session speaks over.

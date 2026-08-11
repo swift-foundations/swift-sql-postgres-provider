@@ -14,4 +14,8 @@ extension Postgres.`Production Contract Test` {
         let _: any SQL.Database.Type = Postgres.Database.self
         let _: SQL.Cursor<Postgres.Row>.Type = SQL.Cursor<Postgres.Row>.self
     }
+
+    @Test func `production transport remains the socket TLS composition owner`() {
+        let _: Postgres.Socket.Transport.Type = Postgres.Socket.Transport.self
+    }
 }

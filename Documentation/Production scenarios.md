@@ -6,9 +6,11 @@ run. They are not executed in this repository under the TX-SQL2 source-only evid
 1. A fixture supplies a validated `DNS.Query`, a `DNS.Resolving` implementation whose ordered
    response contains both IPv6 and IPv4 candidates, and a `TLS.Configuration` for that query and
    hostname. The provider attempts addresses in exactly that resolver order.
-2. A fixture supplies an authenticated `TLS.Engine.Witness`. The witness wraps the selected
-   `Sockets.TCP.Connection`; hostname authentication completes before PostgreSQL startup and
-   SCRAM traffic.
+2. The provider creates an event-backed socket `IO` bundle and a connected
+   `Byte.Channel<TLS.Failure>` pair for each candidate. `Sockets.TCP.Connection.Pump` owns the
+   connection and one endpoint; the injected `TLS.Engine.Witness` receives the other through
+   `wrap(encrypted:configuration:)`. Socket failures map totally into `TLS.Failure`, while TLS
+   handshake and hostname authentication complete before PostgreSQL startup and SCRAM traffic.
 3. A fixture drives `Postgres.Database.read` and `write`, then calls `shutdown`. `Pool.Lease`
    bounds concurrent sessions, wakes a cancelled waiter with the pool cancellation outcome, and
    drains every returned session through its close operation.
@@ -17,4 +19,6 @@ run. They are not executed in this repository under the TX-SQL2 source-only evid
    accumulated by the cursor path.
 
 The fixture owns credentials and trust policy. The provider only consumes their typed DNS and TLS
-contracts and maps connection, protocol, and server outcomes onto `SQL.Error`.
+contracts and maps connection, protocol, and server outcomes onto `SQL.Error`. Closing a session
+always orders the TLS close before pump cancellation/join and event-runner shutdown; a failed
+handshake closes the pump before the next DNS candidate is attempted.

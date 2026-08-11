@@ -1,6 +1,7 @@
 import SQL
 import Testing
 import Time_Primitive
+import Byte_Primitives
 
 @testable import SQL_Postgres_Provider
 
@@ -22,6 +23,7 @@ import Time_Primitive
             let configuration = try Postgres.Configuration(database: "db", user: "user", maxConnections: 3)
             #expect(configuration.maxConnections == 3)
             #expect(configuration.port == 5432)
+            #expect(configuration.identity.hostname == "127.0.0.1")
         }
     }
 
@@ -65,7 +67,7 @@ import Time_Primitive
         ].flatMap { $0 }
         let transport = Memory.Transport(inbound: inbound)
         let configuration = try Postgres.Configuration(
-            host: "127.0.0.1",
+            fixtureHost: "127.0.0.1",
             port: 5432,
             database: "d",
             user: "u",
@@ -84,11 +86,11 @@ import Time_Primitive
         let body = start + 5
         let lengthOffset = body + 8
         let length =
-            Int(written[lengthOffset]) << 24 | Int(written[lengthOffset + 1]) << 16
-            | Int(written[lengthOffset + 2]) << 8 | Int(written[lengthOffset + 3])
+            Int(written[lengthOffset].underlying) << 24 | Int(written[lengthOffset + 1].underlying) << 16
+            | Int(written[lengthOffset + 2].underlying) << 8 | Int(written[lengthOffset + 3].underlying)
         guard length >= 0 else { throw Postgres.Error.protocolViolation("null bound") }
         let payload = written[(lengthOffset + 4)..<(lengthOffset + 4 + length)]
-        return String(decoding: payload, as: UTF8.self)
+        return String(decoding: payload.lazy.map(\.underlying), as: UTF8.self)
     }
 
     @Test func `binds a flat array as a braced comma-separated literal`() async throws {

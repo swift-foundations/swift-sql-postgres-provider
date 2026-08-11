@@ -1,5 +1,6 @@
 internal import Domain_Name_System
 internal import Byte_Channel
+internal import Cardinal_Primitives_Standard_Library_Integration
 internal import IO
 internal import Kernel
 internal import Sockets
@@ -9,9 +10,9 @@ internal import TLS_Engine_Interface
 
 extension Postgres {
     /// The asynchronous byte transport a PostgreSQL session speaks over.
-    protocol Transport: Sendable {
-        func readExact(_ count: Int) async throws(Postgres.Error) -> [UInt8]
-        func writeAll(_ bytes: [UInt8]) async throws(Postgres.Error)
+    protocol Transport {
+        func readExact(_ count: Index<Byte>.Count) async throws(Postgres.Error) -> sending Byte.Chunk
+        func writeAll(_ bytes: borrowing Byte.Chunk) async throws(Postgres.Error)
         func close() async
     }
 }
@@ -35,24 +36,19 @@ extension Postgres.Socket {
         private var session: TLS.Session?
         private var pump: Sockets.TCP.Connection.Pump<TLS.Failure>?
         private let runner: IO<Sockets.Capabilities>.Runner
-        private var buffered: [UInt8] = []
+        private var buffered: [Byte] = []
 
         init<Resolver: DNS.Resolving>(
             configuration: Postgres.Configuration,
             resolver: Resolver,
             tls: TLS.Engine.Witness,
-            tlsConfiguration: TLS.Configuration
+            peer: TLS.PeerPolicy
         ) async throws(Postgres.Error) {
-            guard let query = configuration.query else {
-                throw .configuration("production transport requires a DNS query")
-            }
-            guard tlsConfiguration.query == query, tlsConfiguration.hostname == configuration.host else {
-                throw .configuration("TLS identity must match the PostgreSQL DNS endpoint")
-            }
+            let tlsConfiguration = TLS.Configuration(identity: configuration.identity, peer: peer)
 
             let addresses: [IP.Address]
             do {
-                addresses = try await resolver.resolve(query)
+                addresses = try await tlsConfiguration.resolve(using: resolver)
             } catch {
                 throw .connection("DNS resolution failed: \(error)")
             }
@@ -95,26 +91,33 @@ extension Postgres.Socket {
             throw failure
         }
 
-        func readExact(_ count: Int) async throws(Postgres.Error) -> [UInt8] {
-            guard count >= 0 else { throw .protocolViolation("negative read length") }
-            while buffered.count < count {
-                let bytes: [UInt8]
+        func readExact(_ count: Index<Byte>.Count) async throws(Postgres.Error) -> sending Byte.Chunk {
+            let required = Int(clamping: count)
+            while buffered.count < required {
+                let chunk: Byte.Chunk?
                 switch session {
                 case .some(let session):
-                    do { bytes = try await session.read(maximum: Swift.max(1, count - buffered.count)) }
+                    do {
+                        chunk = try await session.read(
+                            maximum: .init(UInt(Swift.max(1, required - buffered.count)))
+                        )
+                    }
                     catch { throw Self.error(error) }
                 case .none:
                     throw .connection("connection is closed")
                 }
-                guard bytes.isEmpty == false else { throw .connection("peer closed the connection") }
-                buffered.append(contentsOf: bytes)
+                guard let chunk else { throw .connection("peer closed the connection") }
+                let span = chunk.span
+                for index in span.indices { buffered.append(span[index]) }
             }
-            let result = Array(buffered.prefix(count))
-            buffered.removeFirst(count)
-            return result
+            let result = Byte.Chunk(capacity: count) { output in
+                for byte in buffered.prefix(required) { output.append(byte) }
+            }
+            buffered.removeFirst(required)
+            return consume result
         }
 
-        func writeAll(_ bytes: [UInt8]) async throws(Postgres.Error) {
+        func writeAll(_ bytes: borrowing Byte.Chunk) async throws(Postgres.Error) {
             switch session {
             case .some(let session):
                 do { try await session.write(bytes) }

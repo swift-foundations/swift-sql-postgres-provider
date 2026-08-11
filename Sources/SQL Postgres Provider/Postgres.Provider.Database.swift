@@ -17,7 +17,7 @@ extension Postgres {
             configuration: Postgres.Configuration,
             resolver: Resolver,
             tls: TLS.Engine.Witness,
-            tlsConfiguration: TLS.Configuration
+            peer: TLS.PeerPolicy
         ) {
             lease = Pool.Lease(
                 capacity: Pool.Capacity(integerLiteral: configuration.maxConnections),
@@ -27,7 +27,7 @@ extension Postgres {
                             configuration: configuration,
                             resolver: resolver,
                             tls: tls,
-                            tlsConfiguration: tlsConfiguration
+                            peer: peer
                         )
                     } catch {
                         throw .creationFailed
@@ -118,14 +118,14 @@ extension Postgres {
         configuration: Postgres.Configuration,
         resolver: Resolver,
         tls: TLS.Engine.Witness,
-        tlsConfiguration: TLS.Configuration,
-        _ body: @Sendable (Postgres.Database) async throws(Failure) -> Value
+        peer: TLS.PeerPolicy,
+        _ body: (Postgres.Database) async throws(Failure) -> Value
     ) async throws(Failure) -> Value {
         let database = Postgres.Database(
             configuration: configuration,
             resolver: resolver,
             tls: tls,
-            tlsConfiguration: tlsConfiguration
+            peer: peer
         )
         do throws(Failure) {
             let value = try await body(database)

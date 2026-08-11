@@ -24,10 +24,11 @@ let package = Package(
         .package(url: "https://github.com/swift-foundations/swift-kernel.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-io.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-sockets.git", revision: "3fad32626d347cbfc0e803496e7ad9c0e66162db"),
-        .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "f20b065b2f48dbf8d4c7f00c6ea1ec53f0fd729b"),
+        .package(url: "https://github.com/swift-foundations/swift-tls.git", revision: "8c37e32d5af95109c66ede18f0d044e1c62da3ee"),
         .package(url: "https://github.com/swift-foundations/swift-pools.git", revision: "4ace8626b6a00d8ed1763dfe32722063340d6abd"),
         .package(url: "https://github.com/swift-foundations/swift-byte-channel.git", revision: "dfc56d1ed173aae4db784018c746050cbfbe4ee7"),
         .package(url: "https://github.com/swift-primitives/swift-byte-primitives.git", branch: "main"),
+        .package(url: "https://github.com/swift-primitives/swift-cardinal-primitives.git", branch: "main"),
         .package(url: "https://github.com/swift-primitives/swift-either-primitives.git", branch: "main"),
         // Test-target only: the integration tests read their connection settings from the
         // process environment, and this is the Institute reader for it.
@@ -51,6 +52,7 @@ let package = Package(
                 .product(name: "Pools", package: "swift-pools"),
                 .product(name: "Byte Channel", package: "swift-byte-channel"),
                 .product(name: "Byte Primitives", package: "swift-byte-primitives"),
+                .product(name: "Cardinal Primitives Standard Library Integration", package: "swift-cardinal-primitives"),
                 .product(name: "Either Primitives", package: "swift-either-primitives")
             ],
             path: "Sources/SQL Postgres Provider"
@@ -59,7 +61,12 @@ let package = Package(
             name: "SQL Postgres Provider Tests",
             dependencies: [
                 "SQL Postgres Provider",
-                .product(name: "Environment", package: "swift-environment")
+                .product(name: "Environment", package: "swift-environment"),
+                .product(name: "Byte Channel", package: "swift-byte-channel"),
+                .product(name: "Byte Primitives", package: "swift-byte-primitives"),
+                .product(name: "Cardinal Primitives Standard Library Integration", package: "swift-cardinal-primitives"),
+                .product(name: "Domain Name System", package: "swift-domain-name-system"),
+                .product(name: "TLS", package: "swift-tls")
             ],
             path: "Tests/SQL Postgres Provider Tests"
         )

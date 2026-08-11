@@ -19,10 +19,11 @@ contracts. Its required observable behaviour is:
 - bounded, cancellation-aware leases and graceful shutdown.
 
 The provider now composes those owners directly. `Postgres.Configuration`
-receives a validated `DNS.Query`; `Postgres.Database` receives a resolver, a
-TLS engine witness, and a caller-selected TLS configuration. Resolution order
-is retained across IPv4 and IPv6 candidates; the TLS witness authenticates the
-configured hostname before PostgreSQL startup or SCRAM authentication.
+receives one validated `TLS.Peer.Identity`; `Postgres.Database` receives a
+resolver, TLS engine witness, and peer policy. Resolution order is retained
+across IPv4 and IPv6 candidates; the identity's query selects the endpoint and
+its hostname authenticates that same peer before PostgreSQL startup or SCRAM
+authentication.
 
 `Pool.Lease` owns bounded admission, cancellation while waiting, terminal
 resource disposition, and graceful shutdown. `SQL.Cursor` is implemented with
@@ -35,7 +36,7 @@ directly. It does not introduce engine or trust-policy behavior.
 
 The production transport is bound to Sockets
 `3fad32626d347cbfc0e803496e7ad9c0e66162db`, TLS
-`f20b065b2f48dbf8d4c7f00c6ea1ec53f0fd729b`, DNS
+`8c37e32d5af95109c66ede18f0d044e1c62da3ee`, DNS
 `930ab8b5dadc99d6c44b101d92422545b697db7d`, and Byte Channel
 `dfc56d1ed173aae4db784018c746050cbfbe4ee7`. Sockets owns the adaptation to
 Byte Channel's ownership-preserving `Writer.Send.Outcome`; the provider keeps
@@ -52,6 +53,14 @@ consumes it exactly once before closing the Pump and event runner. Repeated
 close calls observe terminal state and do nothing. Dropping a live transport
 invokes the synchronous TLS and Pump cancellation hooks; orderly asynchronous
 runner shutdown requires explicit close.
+
+Production configuration stores one nonoptional `TLS.Peer.Identity`; its DNS
+query selects the address and its hostname authenticates the same peer, so the
+two projections cannot diverge. TLS plaintext crosses the provider boundary as
+owned `Byte.Chunk` values with `Index<Byte>.Count` limits. PostgreSQL framing is
+Byte-primary; `[UInt8]` remains only at the provider-neutral `SQL.Row` byte API
+and cryptographic interoperability boundaries. TLS pins Certificates
+`59b14b94e71daa6cc9cc250c8c553f254489073d`.
 
 ## Installation
 

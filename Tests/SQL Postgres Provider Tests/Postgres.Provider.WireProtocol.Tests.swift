@@ -1,5 +1,6 @@
 import SQL
 import Testing
+import Byte_Primitives
 
 @testable import SQL_Postgres_Provider
 
@@ -10,7 +11,7 @@ import Testing
 @Suite struct `Wire Protocol Test` {
     private func configuration() throws -> Postgres.Configuration {
         try Postgres.Configuration(
-            host: "127.0.0.1",
+            fixtureHost: "127.0.0.1",
             port: 5432,
             database: "d",
             user: "u",
@@ -19,7 +20,7 @@ import Testing
         )
     }
 
-    private func session(_ inbound: [[UInt8]]) throws -> (Postgres.Session<Memory.Transport>, Memory.Transport) {
+    private func session(_ inbound: [[Byte]]) throws -> (Postgres.Session<Memory.Transport>, Memory.Transport) {
         let transport = Memory.Transport(inbound: inbound.flatMap { $0 })
         return (Postgres.Session(configuration: try configuration(), transport: transport), transport)
     }
@@ -35,11 +36,11 @@ import Testing
         // The startup packet is length-prefixed and carries protocol 3.0 as 196608, with no
         // leading type byte — the one unframed message in the protocol.
         let startupLength =
-            Int(transport.written[0]) << 24 | Int(transport.written[1]) << 16
-            | Int(transport.written[2]) << 8 | Int(transport.written[3])
+            Int(transport.written[0].underlying) << 24 | Int(transport.written[1].underlying) << 16
+            | Int(transport.written[2].underlying) << 8 | Int(transport.written[3].underlying)
         #expect(startupLength > 4)
         #expect(Array(transport.written[4..<8]) == Backend.int32(196_608))
-        #expect(String(decoding: transport.written, as: UTF8.self).contains("user"))
+        #expect(String(decoding: transport.written.lazy.map(\.underlying), as: UTF8.self).contains("user"))
     }
 
     @Test func `command complete tag yields the affected row count`() async throws {
@@ -74,7 +75,7 @@ import Testing
     /// The length field is inclusive of itself, so anything below four is malformed and must be
     /// rejected rather than used to compute a negative body length.
     @Test func `a frame shorter than its own length field is rejected`() async throws {
-        let malformed: [UInt8] = [82] + Backend.int32(3)
+        let malformed: [Byte] = [82] + Backend.int32(3)
         let (session, _) = try session([malformed])
         await #expect(throws: Postgres.Error.protocolViolation("message length is less than four")) {
             _ = try await session.execute(sql: "SELECT 1")
@@ -83,7 +84,7 @@ import Testing
 
     /// Guards against a hostile or corrupt length allocating without bound.
     @Test func `a frame larger than the cap is rejected`() async throws {
-        let huge: [UInt8] = [82] + Backend.int32(32 * 1024 * 1024)
+        let huge: [Byte] = [82] + Backend.int32(32 * 1024 * 1024)
         let (session, _) = try session([huge])
         await #expect(throws: Postgres.Error.frameTooLarge(32 * 1024 * 1024)) {
             _ = try await session.execute(sql: "SELECT 1")

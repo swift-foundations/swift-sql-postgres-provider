@@ -1,6 +1,9 @@
 internal import RFC_4122
 internal import SQL
 internal import Time_Primitive
+internal import Byte_Channel
+internal import Byte_Primitives
+internal import Cardinal_Primitives_Standard_Library_Integration
 internal import Domain_Name_System
 internal import TLS_Engine_Interface
 
@@ -25,7 +28,7 @@ extension Postgres {
         /// Runs the wire protocol over a caller-supplied transport.
         ///
         /// The seam that makes startup and the SCRAM handshake testable without a server.
-        init(configuration: Postgres.Configuration, transport: Wire) {
+        init(configuration: Postgres.Configuration, transport: sending Wire) {
             self.configuration = configuration
             self.transport = transport
         }
@@ -176,7 +179,10 @@ extension Postgres {
 
                     case 11:
                         guard let first, let password = configuration.password else { throw .authentication("invalid SCRAM state") }
-                        let serverFirst = String(decoding: message.body.dropFirst(4).dropLast(), as: UTF8.self)
+                        let serverFirst = String(
+                            decoding: message.body.dropFirst(4).dropLast().lazy.map(\.underlying),
+                            as: UTF8.self
+                        )
                         guard let nonce = first.split(separator: "r=").last.map(String.init) else {
                             throw .authentication("invalid SCRAM client-first-message")
                         }
@@ -187,7 +193,10 @@ extension Postgres {
                             throw .authentication("invalid SCRAM server-final exchange")
                         }
                         try Postgres.SCRAM.verify(
-                            serverFinal: String(decoding: final.body.dropFirst(4).dropLast(), as: UTF8.self),
+                            serverFinal: String(
+                                decoding: final.body.dropFirst(4).dropLast().lazy.map(\.underlying),
+                                as: UTF8.self
+                            ),
                             expected: result.serverSignature
                         )
 
@@ -219,28 +228,31 @@ extension Postgres {
             }
         }
 
-        private func receive() async throws(Postgres.Error) -> (type: UInt8, body: [UInt8]) {
+        private func receive() async throws(Postgres.Error) -> (type: Byte, body: [Byte]) {
             guard Task.isCancelled == false else { throw .cancelled }
             let tag = try await transport.readExact(1)
             let lengthBytes = try await transport.readExact(4)
-            let type = tag[0]
-            let length = Int(try int32Value(lengthBytes, at: 0))
+            let type = tag.bytes()[0]
+            let length = Int(try int32Value(lengthBytes.bytes(), at: 0))
             guard length >= 4 else { throw .protocolViolation("message length is less than four") }
             guard length <= 16 * 1024 * 1024 else { throw .frameTooLarge(length) }
-            return (type, try await transport.readExact(length - 4))
+            return (type, try await transport.readExact(.init(UInt(length - 4))).bytes())
         }
 
         /// Reads one backend message: a one-byte tag, a four-byte length inclusive of itself,
         /// then the body.
-        private func send(_ bytes: [UInt8]) async throws(Postgres.Error) {
-            try await transport.writeAll(bytes)
+        private func send(_ bytes: [Byte]) async throws(Postgres.Error) {
+            let chunk = Byte.Chunk(capacity: .init(UInt(bytes.count))) { output in
+                for byte in bytes { output.append(byte) }
+            }
+            try await transport.writeAll(borrow chunk)
         }
 
-        private func parse(_ sql: String) -> [UInt8] {
+        private func parse(_ sql: String) -> [Byte] {
             frame(type: 80, body: [0] + cString(sql) + [0, 0])
         }
 
-        private func bind(_ bindings: [SQL.Value]) -> [UInt8] {
+        private func bind(_ bindings: [SQL.Value]) -> [Byte] {
             var body = cString("") + cString("")
             body.append(contentsOf: int16(1))
             body.append(contentsOf: int16(0))
@@ -250,7 +262,7 @@ extension Postgres {
                 case .null: body.append(contentsOf: int32(-1))
 
                 default:
-                    let bytes = Array(binding.text.utf8)
+                    let bytes = binding.text.utf8.map(Byte.init)
                     body.append(contentsOf: int32(Int32(bytes.count)))
                     body.append(contentsOf: bytes)
                 }
@@ -260,13 +272,13 @@ extension Postgres {
             return frame(type: 66, body: body)
         }
 
-        private func describePortal() -> [UInt8] { frame(type: 68, body: [80] + cString("")) }
+        private func describePortal() -> [Byte] { frame(type: 68, body: [80] + cString("")) }
 
-        private func executeMessage(maximumRows: Int32 = 0) -> [UInt8] {
+        private func executeMessage(maximumRows: Int32 = 0) -> [Byte] {
             frame(type: 69, body: cString("") + int32(maximumRows))
         }
 
-        private func rowDescription(_ body: [UInt8]) throws(Postgres.Error) -> [String] {
+        private func rowDescription(_ body: [Byte]) throws(Postgres.Error) -> [String] {
             guard body.count >= 2 else { throw .protocolViolation("short row description") }
             var cursor = 2
             var names: [String] = []
@@ -281,7 +293,7 @@ extension Postgres {
             return names
         }
 
-        private func dataRow(_ body: [UInt8], columns: [String]) throws(Postgres.Error) -> Postgres.Row {
+        private func dataRow(_ body: [Byte], columns: [String]) throws(Postgres.Error) -> Postgres.Row {
             guard body.count >= 2 else { throw .protocolViolation("short data row") }
             var cursor = 2
             let count = Int(readUInt16(body, at: 0))
@@ -294,14 +306,14 @@ extension Postgres {
                     values.append(nil)
                 } else {
                     guard length >= 0, cursor + length <= body.count else { throw .protocolViolation("invalid data row length") }
-                    values.append(Array(body[cursor..<(cursor + length)]))
+                    values.append(body[cursor..<(cursor + length)].map(\.underlying))
                     cursor += length
                 }
             }
             return Postgres.Row(names: columns, values: values)
         }
 
-        private func errorMessage(_ body: [UInt8]) -> String {
+        private func errorMessage(_ body: [Byte]) -> String {
             var cursor = 0
             var fields: [String] = []
             while cursor < body.count, body[cursor] != 0 {
@@ -309,7 +321,7 @@ extension Postgres {
                 cursor += 1
                 do throws(Postgres.Error) {
                     let (value, next) = try readCString(body, at: cursor)
-                    fields.append("\(Character(UnicodeScalar(code))): \(value)")
+                    fields.append("\(Character(UnicodeScalar(code.underlying))): \(value)")
                     cursor = next
                 } catch {
                     break
@@ -318,10 +330,10 @@ extension Postgres {
             return fields.joined(separator: "; ")
         }
 
-        private func commandCount(_ body: [UInt8]) -> Int {
+        private func commandCount(_ body: [Byte]) -> Int {
             var end = body.count
             while end > 0, body[end - 1] == 0 { end -= 1 }
-            let text = String(decoding: body[..<end], as: UTF8.self)
+            let text = String(decoding: body[..<end].lazy.map(\.underlying), as: UTF8.self)
             return Int(text.split(separator: " ").last ?? "0") ?? 0
         }
 
@@ -332,37 +344,47 @@ extension Postgres {
     }
 }
 
-private func frame(type: UInt8, body: [UInt8]) -> [UInt8] {
+private func frame(type: Byte, body: [Byte]) -> [Byte] {
     [type] + lengthPrefixed(body)
 }
 
-private func lengthPrefixed(_ body: [UInt8]) -> [UInt8] {
+private func lengthPrefixed(_ body: [Byte]) -> [Byte] {
     int32(Int32(body.count + 4)) + body
 }
 
-private func cString(_ value: String) -> [UInt8] { Array(value.utf8) + [0] }
+private func cString(_ value: String) -> [Byte] { value.utf8.map(Byte.init) + [0] }
 
-private func cStrings(_ body: ArraySlice<UInt8>) -> [String] {
-    body.split(separator: 0).map { String(decoding: $0, as: UTF8.self) }
+private func cStrings(_ body: ArraySlice<Byte>) -> [String] {
+    body.split(separator: 0).map { String(decoding: $0.lazy.map(\.underlying), as: UTF8.self) }
 }
 
-private func int16(_ value: Int16) -> [UInt8] { [UInt8(truncatingIfNeeded: value >> 8), UInt8(truncatingIfNeeded: value)] }
-private func int32(_ value: Int32) -> [UInt8] {
-    [UInt8(truncatingIfNeeded: value >> 24), UInt8(truncatingIfNeeded: value >> 16), UInt8(truncatingIfNeeded: value >> 8), UInt8(truncatingIfNeeded: value)]
+private func int16(_ value: Int16) -> [Byte] { [Byte(UInt8(truncatingIfNeeded: value >> 8)), Byte(UInt8(truncatingIfNeeded: value))] }
+private func int32(_ value: Int32) -> [Byte] {
+    [Byte(UInt8(truncatingIfNeeded: value >> 24)), Byte(UInt8(truncatingIfNeeded: value >> 16)), Byte(UInt8(truncatingIfNeeded: value >> 8)), Byte(UInt8(truncatingIfNeeded: value))]
 }
-private func readUInt16(_ bytes: [UInt8], at index: Int) -> UInt16 { UInt16(bytes[index]) << 8 | UInt16(bytes[index + 1]) }
-private func readInt32(_ bytes: [UInt8], at index: Int) -> Int32 {
-    Int32(bitPattern: UInt32(bytes[index]) << 24 | UInt32(bytes[index + 1]) << 16 | UInt32(bytes[index + 2]) << 8 | UInt32(bytes[index + 3]))
+private func readUInt16(_ bytes: [Byte], at index: Int) -> UInt16 { UInt16(bytes[index].underlying) << 8 | UInt16(bytes[index + 1].underlying) }
+private func readInt32(_ bytes: [Byte], at index: Int) -> Int32 {
+    Int32(bitPattern: UInt32(bytes[index].underlying) << 24 | UInt32(bytes[index + 1].underlying) << 16 | UInt32(bytes[index + 2].underlying) << 8 | UInt32(bytes[index + 3].underlying))
 }
 
-private func int32Value(_ bytes: [UInt8], at index: Int) throws(Postgres.Error) -> Int32 {
+private func int32Value(_ bytes: [Byte], at index: Int) throws(Postgres.Error) -> Int32 {
     guard index >= 0, index + 4 <= bytes.count else { throw .protocolViolation("short integer") }
     return readInt32(bytes, at: index)
 }
 
-private func readCString(_ bytes: [UInt8], at index: Int) throws(Postgres.Error) -> (String, Int) {
+private func readCString(_ bytes: [Byte], at index: Int) throws(Postgres.Error) -> (String, Int) {
     guard bytes.indices.contains(index), let end = bytes[index...].firstIndex(of: 0) else { throw .protocolViolation("unterminated string") }
-    return (String(decoding: bytes[index..<end], as: UTF8.self), end + 1)
+    return (String(decoding: bytes[index..<end].lazy.map(\.underlying), as: UTF8.self), end + 1)
+}
+
+extension Byte.Chunk {
+    fileprivate consuming func bytes() -> [Byte] {
+        let span = span
+        var bytes: [Byte] = []
+        bytes.reserveCapacity(Int(clamping: count))
+        for index in span.indices { bytes.append(span[index]) }
+        return bytes
+    }
 }
 
 extension String {
@@ -457,7 +479,7 @@ extension Postgres.Session where Wire == Postgres.Socket.Transport {
         configuration: Postgres.Configuration,
         resolver: Resolver,
         tls: TLS.Engine.Witness,
-        tlsConfiguration: TLS.Configuration
+        peer: TLS.PeerPolicy
     ) async throws(Postgres.Error) {
         self.init(
             configuration: configuration,
@@ -465,7 +487,7 @@ extension Postgres.Session where Wire == Postgres.Socket.Transport {
                 configuration: configuration,
                 resolver: resolver,
                 tls: tls,
-                tlsConfiguration: tlsConfiguration
+                peer: peer
             )
         )
     }

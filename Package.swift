@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "swift-sql-postgres-provider",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS("27")],
     products: [
         .library(name: "SQL Postgres Provider", targets: ["SQL Postgres Provider"])
     ],

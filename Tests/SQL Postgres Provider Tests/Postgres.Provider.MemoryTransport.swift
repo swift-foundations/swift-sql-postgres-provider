@@ -27,7 +27,9 @@ extension Memory {
         /// Reading past the end models the peer hanging up, which is what a real socket reports.
         func readExact(_ count: Int) throws(Postgres.Error) -> [UInt8] {
             guard count >= 0 else { throw .protocolViolation("negative read length") }
-            guard offset + count <= inbound.count else { throw .connection("peer closed the connection") }
+            guard offset + count <= inbound.count else {
+                throw .connection("peer closed the connection")
+            }
             defer { offset += count }
             return Array(inbound[offset..<(offset + count)])
         }

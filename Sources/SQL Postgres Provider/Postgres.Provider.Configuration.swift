@@ -20,7 +20,9 @@ extension Postgres {
             guard port > 0 else { throw .configuration("port must be positive") }
             guard database.isEmpty == false else { throw .configuration("database is empty") }
             guard user.isEmpty == false else { throw .configuration("user is empty") }
-            guard maxConnections > 0 else { throw .configuration("maxConnections must be positive") }
+            guard maxConnections > 0 else {
+                throw .configuration("maxConnections must be positive")
+            }
             self.host = host
             self.port = port
             self.database = database

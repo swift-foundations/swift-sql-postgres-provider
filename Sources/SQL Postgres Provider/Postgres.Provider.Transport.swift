@@ -191,7 +191,9 @@ extension Postgres.Socket {
                 }
                 if ready == 0 { continue }
                 let returned = entries[0].returned
-                if returned.contains(.error) || returned.contains(.hangUp) || returned.contains(.invalid) {
+                if returned.contains(.error) || returned.contains(.hangUp)
+                    || returned.contains(.invalid)
+                {
                     throw .connection("socket polling failed: \(returned)")
                 }
                 return

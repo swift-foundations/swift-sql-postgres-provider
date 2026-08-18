@@ -19,9 +19,13 @@ import Testing
         )
     }
 
-    private func session(_ inbound: [[UInt8]]) throws -> (Postgres.Session<Memory.Transport>, Memory.Transport) {
+    private func session(
+        _ inbound: [[UInt8]]
+    ) throws -> (Postgres.Session<Memory.Transport>, Memory.Transport) {
         let transport = Memory.Transport(inbound: inbound.flatMap { $0 })
-        return (Postgres.Session(configuration: try configuration(), transport: transport), transport)
+        return (
+            Postgres.Session(configuration: try configuration(), transport: transport), transport
+        )
     }
 
     @Test func `startup completes on AuthenticationOk and ReadyForQuery`() async throws {
@@ -64,7 +68,9 @@ import Testing
 
     /// A cleartext request with no configured password must fail before anything is sent, not
     /// send an empty password.
-    @Test func `a password request without a configured password fails authentication`() async throws {
+    @Test func `a password request without a configured password fails authentication`()
+        async throws
+    {
         let (session, _) = try session([Backend.authenticationCleartext])
         await #expect(throws: Postgres.Error.authentication("server requested a password")) {
             _ = try await session.execute(sql: "SELECT 1")
@@ -76,7 +82,8 @@ import Testing
     @Test func `a frame shorter than its own length field is rejected`() async throws {
         let malformed: [UInt8] = [82] + Backend.int32(3)
         let (session, _) = try session([malformed])
-        await #expect(throws: Postgres.Error.protocolViolation("message length is less than four")) {
+        await #expect(throws: Postgres.Error.protocolViolation("message length is less than four"))
+        {
             _ = try await session.execute(sql: "SELECT 1")
         }
     }

@@ -32,7 +32,10 @@ extension Postgres {
             transport.close()
         }
 
-        func execute(sql: String, bindings: [SQL.Value] = []) async throws(Postgres.Error) -> (count: Int, rows: [Postgres.Row]) {
+        func execute(
+            sql: String,
+            bindings: [SQL.Value] = []
+        ) async throws(Postgres.Error) -> (count: Int, rows: [Postgres.Row]) {
             guard closed == false else { throw .connection("connection is closed") }
             guard Task.isCancelled == false else { throw .cancelled }
             if started == false {
@@ -93,13 +96,19 @@ extension Postgres {
                     case 0: break
 
                     case 3:
-                        guard let password = configuration.password else { throw .authentication("server requested a password") }
+                        guard let password = configuration.password else {
+                            throw .authentication("server requested a password")
+                        }
                         try send(frame(type: 112, body: cString(password)))
 
                     case 10:
-                        guard configuration.password != nil else { throw .authentication("server requested SCRAM password") }
+                        guard configuration.password != nil else {
+                            throw .authentication("server requested SCRAM password")
+                        }
                         let mechanisms = cStrings(message.body.dropFirst(4))
-                        guard mechanisms.contains("SCRAM-SHA-256") else { throw .authentication("SCRAM-SHA-256 is unavailable") }
+                        guard mechanisms.contains("SCRAM-SHA-256") else {
+                            throw .authentication("SCRAM-SHA-256 is unavailable")
+                        }
                         let nonce = Self.nonce()
                         let value = Postgres.SCRAM.first(username: configuration.user, nonce: nonce)
                         first = value
@@ -109,19 +118,32 @@ extension Postgres {
                         try send(frame(type: 112, body: initial))
 
                     case 11:
-                        guard let first, let password = configuration.password else { throw .authentication("invalid SCRAM state") }
-                        let serverFirst = String(decoding: message.body.dropFirst(4).dropLast(), as: UTF8.self)
+                        guard let first, let password = configuration.password else {
+                            throw .authentication("invalid SCRAM state")
+                        }
+                        let serverFirst = String(
+                            decoding: message.body.dropFirst(4).dropLast(),
+                            as: UTF8.self
+                        )
                         guard let nonce = first.split(separator: "r=").last.map(String.init) else {
                             throw .authentication("invalid SCRAM client-first-message")
                         }
-                        let result = try Postgres.SCRAM.final(password: password, first: first, serverFirst: serverFirst, nonce: nonce)
+                        let result = try Postgres.SCRAM.final(
+                            password: password,
+                            first: first,
+                            serverFirst: serverFirst,
+                            nonce: nonce
+                        )
                         try send(frame(type: 112, body: cString(result.message)))
                         let final = try receiveSynchronously()
                         guard final.type == 82, try int32Value(final.body, at: 0) == 12 else {
                             throw .authentication("invalid SCRAM server-final exchange")
                         }
                         try Postgres.SCRAM.verify(
-                            serverFinal: String(decoding: final.body.dropFirst(4).dropLast(), as: UTF8.self),
+                            serverFinal: String(
+                                decoding: final.body.dropFirst(4).dropLast(),
+                                as: UTF8.self
+                            ),
                             expected: result.serverSignature
                         )
 
@@ -206,26 +228,35 @@ extension Postgres {
             for _ in 0..<count {
                 let (name, next) = try readCString(body, at: cursor)
                 cursor = next
-                guard cursor + 18 <= body.count else { throw .protocolViolation("short row description field") }
+                guard cursor + 18 <= body.count else {
+                    throw .protocolViolation("short row description field")
+                }
                 cursor += 18
                 names.append(name)
             }
             return names
         }
 
-        private func dataRow(_ body: [UInt8], columns: [String]) throws(Postgres.Error) -> Postgres.Row {
+        private func dataRow(
+            _ body: [UInt8],
+            columns: [String]
+        ) throws(Postgres.Error) -> Postgres.Row {
             guard body.count >= 2 else { throw .protocolViolation("short data row") }
             var cursor = 2
             let count = Int(readUInt16(body, at: 0))
             var values: [[UInt8]?] = []
             for _ in 0..<count {
-                guard cursor + 4 <= body.count else { throw .protocolViolation("short data row value") }
+                guard cursor + 4 <= body.count else {
+                    throw .protocolViolation("short data row value")
+                }
                 let length = Int(readInt32(body, at: cursor))
                 cursor += 4
                 if length == -1 {
                     values.append(nil)
                 } else {
-                    guard length >= 0, cursor + length <= body.count else { throw .protocolViolation("invalid data row length") }
+                    guard length >= 0, cursor + length <= body.count else {
+                        throw .protocolViolation("invalid data row length")
+                    }
                     values.append(Array(body[cursor..<(cursor + length)]))
                     cursor += length
                 }
@@ -259,7 +290,13 @@ extension Postgres {
 
         private static func nonce() -> String {
             var generator = SystemRandomNumberGenerator()
-            return (0..<18).map { _ in String(UInt8.random(in: .min ... .max, using: &generator), radix: 16, uppercase: false).leftPadded(to: 2, with: "0") }.joined()
+            return (0..<18).map { _ in
+                String(
+                    UInt8.random(in: .min ... .max, using: &generator),
+                    radix: 16,
+                    uppercase: false
+                ).leftPadded(to: 2, with: "0")
+            }.joined()
         }
     }
 }
@@ -278,13 +315,24 @@ private func cStrings(_ body: ArraySlice<UInt8>) -> [String] {
     body.split(separator: 0).map { String(decoding: $0, as: UTF8.self) }
 }
 
-private func int16(_ value: Int16) -> [UInt8] { [UInt8(truncatingIfNeeded: value >> 8), UInt8(truncatingIfNeeded: value)] }
-private func int32(_ value: Int32) -> [UInt8] {
-    [UInt8(truncatingIfNeeded: value >> 24), UInt8(truncatingIfNeeded: value >> 16), UInt8(truncatingIfNeeded: value >> 8), UInt8(truncatingIfNeeded: value)]
+private func int16(_ value: Int16) -> [UInt8] {
+    [UInt8(truncatingIfNeeded: value >> 8), UInt8(truncatingIfNeeded: value)]
 }
-private func readUInt16(_ bytes: [UInt8], at index: Int) -> UInt16 { UInt16(bytes[index]) << 8 | UInt16(bytes[index + 1]) }
+private func int32(_ value: Int32) -> [UInt8] {
+    [
+        UInt8(truncatingIfNeeded: value >> 24), UInt8(truncatingIfNeeded: value >> 16),
+        UInt8(truncatingIfNeeded: value >> 8), UInt8(truncatingIfNeeded: value),
+    ]
+}
+private func readUInt16(_ bytes: [UInt8], at index: Int) -> UInt16 {
+    UInt16(bytes[index]) << 8 | UInt16(bytes[index + 1])
+}
 private func readInt32(_ bytes: [UInt8], at index: Int) -> Int32 {
-    Int32(bitPattern: UInt32(bytes[index]) << 24 | UInt32(bytes[index + 1]) << 16 | UInt32(bytes[index + 2]) << 8 | UInt32(bytes[index + 3]))
+    Int32(
+        bitPattern: UInt32(bytes[index]) << 24 | UInt32(bytes[index + 1]) << 16 | UInt32(
+            bytes[index + 2]
+        ) << 8 | UInt32(bytes[index + 3])
+    )
 }
 
 private func int32Value(_ bytes: [UInt8], at index: Int) throws(Postgres.Error) -> Int32 {
@@ -293,7 +341,9 @@ private func int32Value(_ bytes: [UInt8], at index: Int) throws(Postgres.Error) 
 }
 
 private func readCString(_ bytes: [UInt8], at index: Int) throws(Postgres.Error) -> (String, Int) {
-    guard bytes.indices.contains(index), let end = bytes[index...].firstIndex(of: 0) else { throw .protocolViolation("unterminated string") }
+    guard bytes.indices.contains(index), let end = bytes[index...].firstIndex(of: 0) else {
+        throw .protocolViolation("unterminated string")
+    }
     return (String(decoding: bytes[index..<end], as: UTF8.self), end + 1)
 }
 
@@ -303,7 +353,7 @@ extension String {
     }
 }
 
-private func SQLValueText(_ value: SQL.Value) -> String {
+private func sqlValueText(_ value: SQL.Value) -> String {
     switch value {
     case .text(let value): value
     case .int(let value): String(value)
@@ -335,7 +385,7 @@ private func arrayLiteral(_ elements: [SQL.Value]) -> String {
         switch element {
         case .null: return "NULL"
         case .array(let nested): return arrayLiteral(nested)
-        default: return "\"" + quotedElement(SQLValueText(element)) + "\""
+        default: return "\"" + quotedElement(sqlValueText(element)) + "\""
         }
     }
     return "{" + rendered.joined(separator: ",") + "}"
@@ -379,7 +429,7 @@ private func hex(_ value: UInt8) -> String {
 }
 
 extension SQL.Value {
-    fileprivate var text: String { SQLValueText(self) }
+    fileprivate var text: String { sqlValueText(self) }
 }
 
 extension Postgres.Session where Wire == Postgres.Socket.Transport {

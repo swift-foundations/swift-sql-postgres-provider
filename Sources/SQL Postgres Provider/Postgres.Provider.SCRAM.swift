@@ -30,7 +30,11 @@ extension Postgres {
             let clientBare = String(first.dropFirst(3))
             let withoutProof = "c=biws,r=\(combinedNonce)"
             let authMessage = "\(clientBare),\(serverFirst),\(withoutProof)"
-            let salted = pbkdf2(password: Array(password.utf8), salt: Array(salt), iterations: iteration)
+            let salted = pbkdf2(
+                password: Array(password.utf8),
+                salt: Array(salt),
+                iterations: iteration
+            )
             let clientKey = hmac(key: salted, message: Array("Client Key".utf8))
             let storedKey = Array(SHA256.hash(data: clientKey))
             let clientSignature = hmac(key: storedKey, message: Array(authMessage.utf8))
@@ -80,7 +84,9 @@ extension Postgres {
             return result
         }
 
-        private static let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/").map { UInt8($0.asciiValue!) }
+        private static let alphabet = Array(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        ).map { UInt8($0.asciiValue!) }
 
         private static func encodeBase64(_ bytes: [UInt8]) -> String {
             var result: [UInt8] = []
@@ -92,7 +98,9 @@ extension Postgres {
                 let third = index + 2 < bytes.count ? bytes[index + 2] : 0
                 result.append(alphabet[Int(first >> 2)])
                 result.append(alphabet[Int((first & 3) << 4 | second >> 4)])
-                result.append(index + 1 < bytes.count ? alphabet[Int((second & 15) << 2 | third >> 6)] : 61)
+                result.append(
+                    index + 1 < bytes.count ? alphabet[Int((second & 15) << 2 | third >> 6)] : 61
+                )
                 result.append(index + 2 < bytes.count ? alphabet[Int(third & 63)] : 61)
                 index += 3
             }

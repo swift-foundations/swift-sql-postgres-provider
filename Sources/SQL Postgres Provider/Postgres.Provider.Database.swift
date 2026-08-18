@@ -27,7 +27,8 @@ extension Postgres {
             // swiftlint:disable:next no_any_protocol_existential
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
-            try await withLease { (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
+            try await withLease {
+                (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
                 try await body(Postgres.Connection(session: session))
             }
         }
@@ -37,7 +38,8 @@ extension Postgres {
             // swiftlint:disable:next no_any_protocol_existential
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
-            try await withLease { (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
+            try await withLease {
+                (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
                 try await self.begin(session)
                 do throws(SQL.Error) {
                     let value = try await body(Postgres.Connection(session: session))
@@ -55,7 +57,8 @@ extension Postgres {
             // swiftlint:disable:next no_any_protocol_existential
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
-            try await withLease { (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
+            try await withLease {
+                (session: Session<Postgres.Socket.Transport>) throws(SQL.Error) -> Value in
                 try await self.begin(session)
                 do throws(SQL.Error) {
                     let value = try await body(Postgres.Connection(session: session))
@@ -68,7 +71,10 @@ extension Postgres {
             }
         }
 
-        private func command(_ session: Session<Postgres.Socket.Transport>, _ sql: String) async throws(SQL.Error) {
+        private func command(
+            _ session: Session<Postgres.Socket.Transport>,
+            _ sql: String
+        ) async throws(SQL.Error) {
             do throws(Postgres.Error) {
                 _ = try await session.execute(sql: sql)
             } catch {

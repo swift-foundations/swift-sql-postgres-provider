@@ -19,7 +19,11 @@ import Time_Primitive
         }
 
         @Test func `configuration retains bounded pool policy`() throws {
-            let configuration = try Postgres.Configuration(database: "db", user: "user", maxConnections: 3)
+            let configuration = try Postgres.Configuration(
+                database: "db",
+                user: "user",
+                maxConnections: 3
+            )
             #expect(configuration.maxConnections == 3)
             #expect(configuration.port == 5432)
         }
@@ -71,18 +75,26 @@ import Time_Primitive
                 maxConnections: 1
             )
             try await Postgres.withDatabase(configuration: configuration) { database in
-                let value = try await database.read { (connection: any SQL.Connection) throws(SQL.Error) -> Int? in
-                    try await connection.fetchOne(SQL.Query(sql: "SELECT 1 AS value")) { (row: any SQL.Row) throws(SQL.Error) -> Int in
+                let value = try await database.read {
+                    (connection: any SQL.Connection) throws(SQL.Error) -> Int? in
+                    try await connection.fetchOne(SQL.Query(sql: "SELECT 1 AS value")) {
+                        (row: any SQL.Row) throws(SQL.Error) -> Int in
                         try row.int("value")
                     }
                 }
                 #expect(value == 1)
-                _ = try await database.withRollback { (connection: any SQL.Connection) throws(SQL.Error) -> Int in
-                    _ = try await connection.execute(SQL.Query(sql: "CREATE TEMP TABLE rollback_probe (value INTEGER)"))
+                _ = try await database.withRollback {
+                    (connection: any SQL.Connection) throws(SQL.Error) -> Int in
+                    _ = try await connection.execute(
+                        SQL.Query(sql: "CREATE TEMP TABLE rollback_probe (value INTEGER)")
+                    )
                     return 1
                 }
-                let probe = try await database.read { (connection: any SQL.Connection) throws(SQL.Error) -> String? in
-                    try await connection.fetchOne(SQL.Query(sql: "SELECT to_regclass('pg_temp.rollback_probe') AS name")) { (row: any SQL.Row) throws(SQL.Error) -> String in
+                let probe = try await database.read {
+                    (connection: any SQL.Connection) throws(SQL.Error) -> String? in
+                    try await connection.fetchOne(
+                        SQL.Query(sql: "SELECT to_regclass('pg_temp.rollback_probe') AS name")
+                    ) { (row: any SQL.Row) throws(SQL.Error) -> String in
                         try row.stringIfPresent("name") ?? ""
                     }
                 }
@@ -107,14 +119,16 @@ import Time_Primitive
             )
             try await Postgres.withDatabase(configuration: configuration) { database in
                 let holder = Task {
-                    try await database.read { (connection: any SQL.Connection) throws(SQL.Error) -> Int in
+                    try await database.read {
+                        (connection: any SQL.Connection) throws(SQL.Error) -> Int in
                         _ = try await connection.execute(SQL.Query(sql: "SELECT pg_sleep(1)"))
                         return 1
                     }
                 }
                 try await Task.sleep(for: .milliseconds(50))
                 let waiter = Task {
-                    try await database.read { (connection: any SQL.Connection) throws(SQL.Error) -> Int in
+                    try await database.read {
+                        (connection: any SQL.Connection) throws(SQL.Error) -> Int in
                         try await connection.execute(SQL.Query(sql: "SELECT 1"))
                     }
                 }
@@ -167,7 +181,9 @@ import Time_Primitive
     }
 
     @Test func `binds a flat array as a braced comma-separated literal`() async throws {
-        #expect(try await boundPayload(.array([.int(1), .int(2), .int(3)])) == "{\"1\",\"2\",\"3\"}")
+        #expect(
+            try await boundPayload(.array([.int(1), .int(2), .int(3)])) == "{\"1\",\"2\",\"3\"}"
+        )
     }
 
     @Test func `binds an empty array`() async throws {
@@ -189,7 +205,9 @@ import Time_Primitive
     }
 
     @Test func `escapes backslash and double quote inside an element`() async throws {
-        #expect(try await boundPayload(.array([.text("he said \"hi\"")])) == "{\"he said \\\"hi\\\"\"}")
+        #expect(
+            try await boundPayload(.array([.text("he said \"hi\"")])) == "{\"he said \\\"hi\\\"\"}"
+        )
         #expect(try await boundPayload(.array([.text("back\\slash")])) == "{\"back\\\\slash\"}")
     }
 

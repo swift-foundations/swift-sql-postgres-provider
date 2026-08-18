@@ -9,7 +9,8 @@ extension Postgres {
 
         public func execute(_ statement: some SQL.Statement) async throws(SQL.Error) -> Int {
             do throws(Postgres.Error) {
-                return try await session.execute(sql: statement.sql, bindings: statement.bindings).count
+                return try await session.execute(sql: statement.sql, bindings: statement.bindings)
+                    .count
             } catch {
                 throw error.sql
             }
@@ -23,7 +24,8 @@ extension Postgres {
         ) async throws(SQL.Error) -> [Value] {
             let rows: [Postgres.Row]
             do throws(Postgres.Error) {
-                rows = try await session.execute(sql: statement.sql, bindings: statement.bindings).rows
+                rows = try await session.execute(sql: statement.sql, bindings: statement.bindings)
+                    .rows
             } catch {
                 throw error.sql
             }

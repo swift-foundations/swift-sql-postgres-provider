@@ -38,7 +38,10 @@ extension Postgres.Row {
         return value
     }
 
-    private static func integer<T: FixedWidthInteger>(_ bytes: [UInt8], _ label: String) throws(SQL.Error) -> T {
+    private static func integer<T: FixedWidthInteger>(
+        _ bytes: [UInt8],
+        _ label: String
+    ) throws(SQL.Error) -> T {
         guard let value = T(try Self.text(bytes, label)) else {
             throw .decoding("column \(label) is not an integer")
         }
@@ -140,7 +143,9 @@ extension Postgres.Row {
     private static func bytes(_ value: [UInt8], _ label: String) throws(SQL.Error) -> [UInt8] {
         guard value.starts(with: [92, 120]) else { return value }
         let hex = value.dropFirst(2)
-        guard hex.count.isMultiple(of: 2) else { throw .decoding("column \(label) has invalid bytea hex") }
+        guard hex.count.isMultiple(of: 2) else {
+            throw .decoding("column \(label) has invalid bytea hex")
+        }
         var result: [UInt8] = []
         result.reserveCapacity(hex.count / 2)
         var iterator = hex.makeIterator()
@@ -150,7 +155,9 @@ extension Postgres.Row {
         {
             result.append(highValue * 16 + lowValue)
         }
-        guard result.count == hex.count / 2 else { throw .decoding("column \(label) has invalid bytea hex") }
+        guard result.count == hex.count / 2 else {
+            throw .decoding("column \(label) has invalid bytea hex")
+        }
         return result
     }
 
@@ -181,51 +188,135 @@ extension Postgres.Row {
         return try convert(value)
     }
 
-    public func string(_ column: String) throws(SQL.Error) -> String { try Self.text(Self.required(value(column), column), column) }
-    public func int(_ column: String) throws(SQL.Error) -> Int { try Self.integer(Self.required(value(column), column), column) }
-    public func int64(_ column: String) throws(SQL.Error) -> Int64 { try Self.integer(Self.required(value(column), column), column) }
-    public func double(_ column: String) throws(SQL.Error) -> Double { try Self.floating(Self.required(value(column), column), column) }
-    public func bool(_ column: String) throws(SQL.Error) -> Bool { try Self.bool(Self.required(value(column), column), column) }
-    public func uuid(_ column: String) throws(SQL.Error) -> RFC_4122.UUID { try Self.uuid(Self.required(value(column), column), column) }
-    public func timestamp(_ column: String) throws(SQL.Error) -> Instant { try Self.timestamp(Self.required(value(column), column), column) }
-    public func bytes(_ column: String) throws(SQL.Error) -> [UInt8] { try Self.bytes(Self.required(value(column), column), column) }
+    public func string(_ column: String) throws(SQL.Error) -> String {
+        try Self.text(Self.required(value(column), column), column)
+    }
+    public func int(_ column: String) throws(SQL.Error) -> Int {
+        try Self.integer(Self.required(value(column), column), column)
+    }
+    public func int64(_ column: String) throws(SQL.Error) -> Int64 {
+        try Self.integer(Self.required(value(column), column), column)
+    }
+    public func double(_ column: String) throws(SQL.Error) -> Double {
+        try Self.floating(Self.required(value(column), column), column)
+    }
+    public func bool(_ column: String) throws(SQL.Error) -> Bool {
+        try Self.bool(Self.required(value(column), column), column)
+    }
+    public func uuid(_ column: String) throws(SQL.Error) -> RFC_4122.UUID {
+        try Self.uuid(Self.required(value(column), column), column)
+    }
+    public func timestamp(_ column: String) throws(SQL.Error) -> Instant {
+        try Self.timestamp(Self.required(value(column), column), column)
+    }
+    public func bytes(_ column: String) throws(SQL.Error) -> [UInt8] {
+        try Self.bytes(Self.required(value(column), column), column)
+    }
 
-    public func stringIfPresent(_ column: String) throws(SQL.Error) -> String? { try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> String in try Self.text(bytes, column) } }
-    public func intIfPresent(_ column: String) throws(SQL.Error) -> Int? { try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> Int in try Self.integer(bytes, column) } }
-    public func int64IfPresent(_ column: String) throws(SQL.Error) -> Int64? { try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> Int64 in try Self.integer(bytes, column) } }
-    public func doubleIfPresent(_ column: String) throws(SQL.Error) -> Double? { try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> Double in try Self.floating(bytes, column) } }
-    public func boolIfPresent(_ column: String) throws(SQL.Error) -> Bool? { try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> Bool in try Self.bool(bytes, column) } }
+    public func stringIfPresent(_ column: String) throws(SQL.Error) -> String? {
+        try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> String in
+            try Self.text(bytes, column)
+        }
+    }
+    public func intIfPresent(_ column: String) throws(SQL.Error) -> Int? {
+        try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> Int in
+            try Self.integer(bytes, column)
+        }
+    }
+    public func int64IfPresent(_ column: String) throws(SQL.Error) -> Int64? {
+        try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> Int64 in
+            try Self.integer(bytes, column)
+        }
+    }
+    public func doubleIfPresent(_ column: String) throws(SQL.Error) -> Double? {
+        try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> Double in
+            try Self.floating(bytes, column)
+        }
+    }
+    public func boolIfPresent(_ column: String) throws(SQL.Error) -> Bool? {
+        try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> Bool in
+            try Self.bool(bytes, column)
+        }
+    }
     public func uuidIfPresent(_ column: String) throws(SQL.Error) -> RFC_4122.UUID? {
-        try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> RFC_4122.UUID in try Self.uuid(bytes, column) }
+        try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> RFC_4122.UUID in
+            try Self.uuid(bytes, column)
+        }
     }
     public func timestampIfPresent(_ column: String) throws(SQL.Error) -> Instant? {
-        try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> Instant in try Self.timestamp(bytes, column) }
+        try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> Instant in
+            try Self.timestamp(bytes, column)
+        }
     }
-    public func bytesIfPresent(_ column: String) throws(SQL.Error) -> [UInt8]? { try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> [UInt8] in try Self.bytes(bytes, column) } }
+    public func bytesIfPresent(_ column: String) throws(SQL.Error) -> [UInt8]? {
+        try Self.optional(value(column)) { (bytes: [UInt8]) throws(SQL.Error) -> [UInt8] in
+            try Self.bytes(bytes, column)
+        }
+    }
 
-    public func string(at index: Int) throws(SQL.Error) -> String { try Self.text(Self.required(value(at: index), "\(index)"), "\(index)") }
-    public func int(at index: Int) throws(SQL.Error) -> Int { try Self.integer(Self.required(value(at: index), "\(index)"), "\(index)") }
-    public func int64(at index: Int) throws(SQL.Error) -> Int64 { try Self.integer(Self.required(value(at: index), "\(index)"), "\(index)") }
-    public func double(at index: Int) throws(SQL.Error) -> Double { try Self.floating(Self.required(value(at: index), "\(index)"), "\(index)") }
-    public func bool(at index: Int) throws(SQL.Error) -> Bool { try Self.bool(Self.required(value(at: index), "\(index)"), "\(index)") }
-    public func uuid(at index: Int) throws(SQL.Error) -> RFC_4122.UUID { try Self.uuid(Self.required(value(at: index), "\(index)"), "\(index)") }
-    public func timestamp(at index: Int) throws(SQL.Error) -> Instant { try Self.timestamp(Self.required(value(at: index), "\(index)"), "\(index)") }
-    public func bytes(at index: Int) throws(SQL.Error) -> [UInt8] { try Self.bytes(Self.required(value(at: index), "\(index)"), "\(index)") }
+    public func string(at index: Int) throws(SQL.Error) -> String {
+        try Self.text(Self.required(value(at: index), "\(index)"), "\(index)")
+    }
+    public func int(at index: Int) throws(SQL.Error) -> Int {
+        try Self.integer(Self.required(value(at: index), "\(index)"), "\(index)")
+    }
+    public func int64(at index: Int) throws(SQL.Error) -> Int64 {
+        try Self.integer(Self.required(value(at: index), "\(index)"), "\(index)")
+    }
+    public func double(at index: Int) throws(SQL.Error) -> Double {
+        try Self.floating(Self.required(value(at: index), "\(index)"), "\(index)")
+    }
+    public func bool(at index: Int) throws(SQL.Error) -> Bool {
+        try Self.bool(Self.required(value(at: index), "\(index)"), "\(index)")
+    }
+    public func uuid(at index: Int) throws(SQL.Error) -> RFC_4122.UUID {
+        try Self.uuid(Self.required(value(at: index), "\(index)"), "\(index)")
+    }
+    public func timestamp(at index: Int) throws(SQL.Error) -> Instant {
+        try Self.timestamp(Self.required(value(at: index), "\(index)"), "\(index)")
+    }
+    public func bytes(at index: Int) throws(SQL.Error) -> [UInt8] {
+        try Self.bytes(Self.required(value(at: index), "\(index)"), "\(index)")
+    }
 
-    public func stringIfPresent(at index: Int) throws(SQL.Error) -> String? { try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> String in try Self.text(bytes, "\(index)") } }
-    public func intIfPresent(at index: Int) throws(SQL.Error) -> Int? { try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> Int in try Self.integer(bytes, "\(index)") } }
-    public func int64IfPresent(at index: Int) throws(SQL.Error) -> Int64? { try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> Int64 in try Self.integer(bytes, "\(index)") } }
+    public func stringIfPresent(at index: Int) throws(SQL.Error) -> String? {
+        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> String in
+            try Self.text(bytes, "\(index)")
+        }
+    }
+    public func intIfPresent(at index: Int) throws(SQL.Error) -> Int? {
+        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> Int in
+            try Self.integer(bytes, "\(index)")
+        }
+    }
+    public func int64IfPresent(at index: Int) throws(SQL.Error) -> Int64? {
+        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> Int64 in
+            try Self.integer(bytes, "\(index)")
+        }
+    }
     public func doubleIfPresent(at index: Int) throws(SQL.Error) -> Double? {
-        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> Double in try Self.floating(bytes, "\(index)") }
+        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> Double in
+            try Self.floating(bytes, "\(index)")
+        }
     }
-    public func boolIfPresent(at index: Int) throws(SQL.Error) -> Bool? { try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> Bool in try Self.bool(bytes, "\(index)") } }
+    public func boolIfPresent(at index: Int) throws(SQL.Error) -> Bool? {
+        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> Bool in
+            try Self.bool(bytes, "\(index)")
+        }
+    }
     public func uuidIfPresent(at index: Int) throws(SQL.Error) -> RFC_4122.UUID? {
-        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> RFC_4122.UUID in try Self.uuid(bytes, "\(index)") }
+        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> RFC_4122.UUID in
+            try Self.uuid(bytes, "\(index)")
+        }
     }
     public func timestampIfPresent(at index: Int) throws(SQL.Error) -> Instant? {
-        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> Instant in try Self.timestamp(bytes, "\(index)") }
+        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> Instant in
+            try Self.timestamp(bytes, "\(index)")
+        }
     }
     public func bytesIfPresent(at index: Int) throws(SQL.Error) -> [UInt8]? {
-        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> [UInt8] in try Self.bytes(bytes, "\(index)") }
+        try Self.optional(value(at: index)) { (bytes: [UInt8]) throws(SQL.Error) -> [UInt8] in
+            try Self.bytes(bytes, "\(index)")
+        }
     }
 }

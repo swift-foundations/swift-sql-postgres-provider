@@ -1,17 +1,20 @@
-// swift-tools-version: 6.3.3
+// swift-tools-version: 6.4
 
 import PackageDescription
 
 let package = Package(
     name: "swift-sql-postgres-provider",
-    platforms: [.macOS("27")],
+    platforms: [.macOS(.v27)],
     products: [
         .library(name: "SQL Postgres Provider", targets: ["SQL Postgres Provider"])
     ],
     dependencies: [
         .package(url: "https://github.com/swift-foundations/swift-sql.git", branch: "main"),
         .package(url: "https://github.com/swift-ietf/swift-rfc-4122.git", branch: "main"),
-        .package(url: "https://github.com/swift-primitives/swift-time-primitives.git", branch: "main"),
+        .package(
+            url: "https://github.com/swift-primitives/swift-time-primitives.git",
+            branch: "main"
+        ),
         // The sanctioned third party. `Crypto` is the cross-platform CryptoKit: on Apple
         // platforms it re-exports CryptoKit itself, and elsewhere it supplies the same API.
         // SCRAM-SHA-256 needs HMAC, SHA256 and SymmetricKey, and CryptoKit does not exist off
@@ -22,10 +25,13 @@ let package = Package(
         // top — including `connect`, whose EINTR completes through poll rather than by retrying.
         .package(url: "https://github.com/swift-foundations/swift-posix.git", branch: "main"),
         .package(url: "https://github.com/swift-iso/swift-iso-9945.git", branch: "main"),
-        .package(url: "https://github.com/swift-primitives/swift-byte-primitives.git", branch: "main"),
+        .package(
+            url: "https://github.com/swift-primitives/swift-byte-primitives.git",
+            branch: "main"
+        ),
         // Test-target only: the integration tests read their connection settings from the
         // process environment, and this is the Institute reader for it.
-        .package(url: "https://github.com/swift-foundations/swift-environment.git", branch: "main")
+        .package(url: "https://github.com/swift-foundations/swift-environment.git", branch: "main"),
     ],
     targets: [
         .target(
@@ -40,7 +46,7 @@ let package = Package(
                 .product(name: "ISO 9945 Kernel Socket", package: "swift-iso-9945"),
                 .product(name: "ISO 9945 Kernel Socket Address", package: "swift-iso-9945"),
                 .product(name: "ISO 9945 Kernel Poll", package: "swift-iso-9945"),
-                .product(name: "Byte Primitives", package: "swift-byte-primitives")
+                .product(name: "Byte Primitives", package: "swift-byte-primitives"),
             ],
             path: "Sources/SQL Postgres Provider"
         ),
@@ -48,10 +54,10 @@ let package = Package(
             name: "SQL Postgres Provider Tests",
             dependencies: [
                 "SQL Postgres Provider",
-                .product(name: "Environment", package: "swift-environment")
+                .product(name: "Environment", package: "swift-environment"),
             ],
             path: "Tests/SQL Postgres Provider Tests"
-        )
+        ),
     ],
     swiftLanguageModes: [.v6]
 )
@@ -60,6 +66,6 @@ for target in package.targets where ![.system, .binary, .plugin, .macro].contain
     target.swiftSettings = [
         .enableUpcomingFeature("ExistentialAny"),
         .enableUpcomingFeature("InternalImportsByDefault"),
-        .enableUpcomingFeature("MemberImportVisibility")
+        .enableUpcomingFeature("MemberImportVisibility"),
     ]
 }

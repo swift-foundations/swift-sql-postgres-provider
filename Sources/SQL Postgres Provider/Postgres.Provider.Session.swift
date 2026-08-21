@@ -3,24 +3,13 @@ internal import SQL
 internal import Time_Primitive
 
 extension Postgres {
-    /// The PostgreSQL wire protocol: framing, startup, SCRAM authentication, extended query.
-    ///
-    /// Byte transport is a ``Postgres/Transport``, so nothing here names a descriptor, a syscall
-    /// or a platform. That split is what lets the protocol be exercised against an in-memory
-    /// transport rather than only against a live server.
-    ///
-    /// Generic over its transport rather than holding `any Postgres.Transport`: the transport is
-    /// chosen statically at every call site — `Socket.Transport` in production, the in-memory
-    /// double in tests — so there is nothing for an existential to buy here.
+
     actor Session<Wire: Postgres.Transport> {
         private let configuration: Postgres.Configuration
         private let transport: Wire
         private var closed = false
         private var started = false
 
-        /// Runs the wire protocol over a caller-supplied transport.
-        ///
-        /// The seam that makes startup and the SCRAM handshake testable without a server.
         init(configuration: Postgres.Configuration, transport: Wire) {
             self.configuration = configuration
             self.transport = transport
@@ -180,8 +169,6 @@ extension Postgres {
             return try receiveSynchronously()
         }
 
-        /// Reads one backend message: a one-byte tag, a four-byte length inclusive of itself,
-        /// then the body.
         private func receiveSynchronously() throws(Postgres.Error) -> (type: UInt8, body: [UInt8]) {
             let type = try transport.readExact(1)[0]
             let length = Int(try int32Value(transport.readExact(4), at: 0))
@@ -365,21 +352,12 @@ private func sqlValueText(_ value: SQL.Value) -> String {
     case .blob(let bytes): "\\x" + bytes.map(hex).joined()
     case .jsonb(let bytes): String(decoding: bytes, as: UTF8.self)
 
-    // The digit string is already exact — emitting it verbatim is what keeps a `numeric`
-    // wider than any fixed-width decimal type intact across the seam.
     case .decimal(let digits): digits
     case .array(let elements): arrayLiteral(elements)
     case .null: ""
     }
 }
 
-/// Renders an array as a PostgreSQL array literal: `{a,b,c}`, nesting as `{{a,b},{c}}`.
-///
-/// A `null` element is the bare word `NULL`; every other element is double-quoted. Quoting
-/// unconditionally is valid for every element type — the server parses the quoted content with
-/// the element type's own input function — and it removes an entire class of delimiter bug,
-/// since an unquoted element containing `,`, `{`, `}`, whitespace, or the literal text `NULL`
-/// would otherwise change the array's shape or smuggle in a null.
 private func arrayLiteral(_ elements: [SQL.Value]) -> String {
     let rendered = elements.map { element -> String in
         switch element {
@@ -391,7 +369,6 @@ private func arrayLiteral(_ elements: [SQL.Value]) -> String {
     return "{" + rendered.joined(separator: ",") + "}"
 }
 
-/// Escapes the two characters that are special inside a quoted array element.
 private func quotedElement(_ text: String) -> String {
     var result = ""
     result.reserveCapacity(text.count)
@@ -433,7 +410,7 @@ extension SQL.Value {
 }
 
 extension Postgres.Session where Wire == Postgres.Socket.Transport {
-    /// Opens a socket to the configured server and runs the wire protocol over it.
+
     init(configuration: Postgres.Configuration) throws(Postgres.Error) {
         self.init(
             configuration: configuration,

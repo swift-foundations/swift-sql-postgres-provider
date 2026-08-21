@@ -7,57 +7,26 @@ internal import POSIX_Kernel_Socket
 internal import SQL
 
 extension Postgres {
-    /// The byte transport a ``Postgres/Session`` speaks the PostgreSQL wire protocol over.
-    ///
-    /// `Session` owns framing, startup, SCRAM authentication and the extended query flow. This
-    /// owns getting bytes to and from the far end. They are separated because they have
-    /// different reasons to change — one tracks the PostgreSQL protocol, the other tracks the
-    /// platform — and because the wire protocol is untestable while it is welded to a socket.
-    ///
-    /// A conforming type handles short reads and writes, applies the correct `EINTR` policy, and
-    /// abandons a blocking wait when the surrounding `Task` is cancelled.
+
     protocol Transport: Sendable {
-        /// Reads exactly `count` bytes, blocking until they arrive.
-        ///
-        /// Throws ``Postgres/Error/cancelled`` if the surrounding task is cancelled while
-        /// waiting, and ``Postgres/Error/connection(_:)`` if the peer closes first.
+
         func readExact(_ count: Int) throws(Postgres.Error) -> [UInt8]
 
-        /// Writes every byte, blocking until all of them are accepted.
         func writeAll(_ bytes: [UInt8]) throws(Postgres.Error)
 
-        /// Releases the underlying resource. Idempotent.
         func close()
     }
 }
 
 extension Postgres {
-    /// Namespace for the socket-backed transport.
+
     enum Socket {}
 }
 
 extension Postgres.Socket {
-    /// A ``Postgres/Transport`` over a blocking IPv4 TCP socket.
-    ///
-    /// Every syscall goes through the Institute's POSIX stack rather than a platform module:
-    /// `swift-iso-9945` binds the syscalls and owns the `#if canImport(Darwin)/Glibc` seam, and
-    /// `swift-posix` layers the `EINTR` policy on top. Nothing here names a platform, which is
-    /// what makes this file — and therefore the package — build off Apple platforms.
-    ///
-    /// The `connect` policy is the reason to compose rather than hand-roll. `EINTR` on
-    /// `connect(2)` does **not** mean "retry the call": the connection attempt continues
-    /// asynchronously, and the correct recovery is `poll(POLLOUT)` then `getsockopt(SO_ERROR)`.
-    /// `POSIX.Kernel.Socket.Connect` implements exactly that. The hand-rolled predecessor
-    /// retried nothing and closed the descriptor instead — swift-institute/Issues#60.
-    ///
-    /// Remaining limitations, all this type's rather than the protocol's: IPv4 literals only
-    /// (`Kernel.Socket.Address.Info` would supply DNS and IPv6), and no TLS.
+
     final class Transport: @unchecked Sendable, Postgres.Transport {
-        /// `ISO_9945.Kernel.Socket.Descriptor` is `~Copyable` with an owning `deinit`, so it
-        /// cannot be moved out of a class property. `close()` therefore shuts the connection
-        /// down — which only borrows — and the descriptor's own `deinit` performs `close(2)`
-        /// when this object is released. Shutdown is what the peer observes; the descriptor is
-        /// released deterministically with the transport.
+
         private let descriptor: ISO_9945.Kernel.Socket.Descriptor
         private var closed = false
 
@@ -71,10 +40,7 @@ extension Postgres.Socket {
             do throws(ISO_9945.Kernel.Socket.Shutdown.Error) {
                 try ISO_9945.Kernel.Socket.Shutdown.shutdown(descriptor, how: .both)
             } catch {
-                // Deliberately terminal. A failed shutdown means the connection is already
-                // gone — `ENOTCONN` when the peer hung up first is the ordinary case — and
-                // `close()` is the idempotent teardown path with no caller left to inform.
-                // The descriptor is released by its own `deinit` regardless.
+
             }
         }
 
@@ -92,8 +58,7 @@ extension Postgres.Socket {
                 throw .connection("socket creation failed: \(error)")
             }
             do {
-                // EINTR-safe: completes through poll(POLLOUT) + getsockopt(SO_ERROR) rather than
-                // retrying connect(2), which would report EALREADY.
+
                 try POSIX.Kernel.Socket.Connect.connect(descriptor, address: address)
             } catch {
                 throw .connection("connect failed: \(error)")
@@ -101,11 +66,6 @@ extension Postgres.Socket {
             return descriptor
         }
 
-        /// Parses a dotted quad into the address an `IPv4` carries.
-        ///
-        /// Hand-parsed rather than via `inet_pton`, which lives in a platform module. Anything
-        /// that is not exactly four decimal octets is rejected, so a hostname fails here with a
-        /// configuration error rather than silently becoming a wrong address.
         private static func address(
             host: String,
             port: UInt16
@@ -178,7 +138,6 @@ extension Postgres.Socket {
             }
         }
 
-        /// Waits for readiness in short slices, so a cancelled task does not block on the kernel.
         private func wait(for events: ISO_9945.Kernel.Poll.Events) throws(Postgres.Error) {
             while true {
                 guard Task.isCancelled == false else { throw .cancelled }

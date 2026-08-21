@@ -1,5 +1,5 @@
 extension Postgres {
-    /// Explicit connection and pool configuration for the native client.
+
     public struct Configuration: Sendable, Hashable {
         public let host: String
         public let port: UInt16

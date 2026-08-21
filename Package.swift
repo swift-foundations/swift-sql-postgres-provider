@@ -15,22 +15,16 @@ let package = Package(
             url: "https://github.com/swift-primitives/swift-time-primitives.git",
             branch: "main"
         ),
-        // The sanctioned third party. `Crypto` is the cross-platform CryptoKit: on Apple
-        // platforms it re-exports CryptoKit itself, and elsewhere it supplies the same API.
-        // SCRAM-SHA-256 needs HMAC, SHA256 and SymmetricKey, and CryptoKit does not exist off
-        // Apple platforms.
+
         .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0"..<"5.0.0"),
-        // The Institute POSIX stack. swift-iso-9945 binds the syscalls and owns the
-        // `#if canImport(Darwin)/Glibc` portability seam; swift-posix layers the EINTR policy on
-        // top — including `connect`, whose EINTR completes through poll rather than by retrying.
+
         .package(url: "https://github.com/swift-foundations/swift-posix.git", branch: "main"),
         .package(url: "https://github.com/swift-iso/swift-iso-9945.git", branch: "main"),
         .package(
             url: "https://github.com/swift-primitives/swift-byte-primitives.git",
             branch: "main"
         ),
-        // Test-target only: the integration tests read their connection settings from the
-        // process environment, and this is the Institute reader for it.
+
         .package(url: "https://github.com/swift-foundations/swift-environment.git", branch: "main"),
     ],
     targets: [

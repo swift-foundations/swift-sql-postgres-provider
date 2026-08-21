@@ -1,7 +1,7 @@
 public import SQL
 
 extension Postgres {
-    /// A lazily connected, bounded pool of native PostgreSQL sessions.
+
     public actor Database: SQL.Database {
         private let configuration: Postgres.Configuration
         private var available: [Session<Postgres.Socket.Transport>] = []
@@ -12,8 +12,6 @@ extension Postgres {
             self.configuration = configuration
         }
 
-        /// Closes idle sessions and prevents new leases. The enclosing lifetime
-        /// should call this after all database work has completed.
         public func shutdown() async {
             closed = true
             let sessions = available
@@ -23,8 +21,7 @@ extension Postgres {
         }
 
         public func read<Value: Sendable>(
-            // `any SQL.Connection` is the parameter type in swift-sql's own `SQL.Database` requirement; a conformance cannot narrow it.
-            // swiftlint:disable:next no_any_protocol_existential
+
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
             try await withLease {
@@ -34,8 +31,7 @@ extension Postgres {
         }
 
         public func write<Value: Sendable>(
-            // `any SQL.Connection` is the parameter type in swift-sql's own `SQL.Database` requirement; a conformance cannot narrow it.
-            // swiftlint:disable:next no_any_protocol_existential
+
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
             try await withLease {
@@ -53,8 +49,7 @@ extension Postgres {
         }
 
         public func withRollback<Value: Sendable>(
-            // `any SQL.Connection` is the parameter type in swift-sql's own `SQL.Database` requirement; a conformance cannot narrow it.
-            // swiftlint:disable:next no_any_protocol_existential
+
             _ body: @Sendable (any SQL.Connection) async throws(SQL.Error) -> Value
         ) async throws(SQL.Error) -> Value {
             try await withLease {
@@ -131,7 +126,7 @@ extension Postgres {
 }
 
 extension Postgres {
-    /// Scope helper that closes the pool after the body, including on failure.
+
     public static func withDatabase<Value: Sendable, Failure: Swift.Error>(
         configuration: Postgres.Configuration,
         _ body: @Sendable (Postgres.Database) async throws(Failure) -> Value

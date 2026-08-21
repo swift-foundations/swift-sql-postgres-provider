@@ -3,7 +3,7 @@ public import SQL
 public import Time_Primitive
 
 extension Postgres {
-    /// A text-format PostgreSQL result row behind the engine-free row membrane.
+
     public struct Row: SQL.Row {
         let names: [String]
         let values: [[UInt8]?]

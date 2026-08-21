@@ -1,8 +1,7 @@
 internal import SQL
 
 extension Postgres {
-    /// Failure domain of the native client. `SQL.Connection` maps this domain
-    /// to the engine-free `SQL.Error` membrane.
+
     public enum Error: Swift.Error, Sendable, Hashable {
         case configuration(String)
         case connection(String)

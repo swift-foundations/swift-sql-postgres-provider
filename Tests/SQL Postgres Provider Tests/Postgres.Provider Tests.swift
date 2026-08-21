@@ -56,8 +56,7 @@ import Time_Primitive
     }
 
     @Suite struct `Integration Test` {
-        /// This test is intentionally inert unless a deliberately managed test database supplies
-        /// all four explicit variables. It never starts, stops, or mutates an unmanaged server.
+
         @Test func `managed database executes a read and rollback scope`() async throws {
             guard let host = environment("POSTGRES_NATIVE_TEST_HOST"),
                 let databaseName = environment("POSTGRES_NATIVE_TEST_DATABASE"),
@@ -143,10 +142,7 @@ import Time_Primitive
 }
 
 @Suite struct `Array Literal Test` {
-    /// Runs one binding through the real Bind message and returns the bytes actually put on the
-    /// wire for it. This goes through `execute` rather than calling the encoder directly, so the
-    /// encoders stay `private` and the assertion is about wire output rather than an internal
-    /// helper.
+
     private func boundPayload(_ value: SQL.Value) async throws -> String {
         let inbound = [
             Backend.authenticationOk, Backend.readyForQuery,
@@ -165,8 +161,7 @@ import Time_Primitive
         _ = try await session.execute(sql: "SELECT $1", bindings: [value])
 
         let written = transport.written
-        // Bind is tag 66. Its body is two empty C strings, then int16 format-count, int16
-        // format, int16 parameter-count, then int32 length + bytes for the single parameter.
+
         guard let start = written.firstIndex(of: 66) else {
             throw Postgres.Error.protocolViolation("no Bind message was written")
         }
@@ -190,13 +185,10 @@ import Time_Primitive
         #expect(try await boundPayload(.array([])) == "{}")
     }
 
-    /// A bare `NULL` is the only way to express a null element; a quoted `"NULL"` is the
-    /// four-character string, which is why the two must not render alike.
     @Test func `distinguishes a null element from the literal text NULL`() async throws {
         #expect(try await boundPayload(.array([.null, .text("NULL")])) == "{NULL,\"NULL\"}")
     }
 
-    /// Unquoted, each of these would change the array's shape rather than its contents.
     @Test func `quotes elements containing delimiters`() async throws {
         #expect(try await boundPayload(.array([.text("a,b")])) == "{\"a,b\"}")
         #expect(try await boundPayload(.array([.text("{x}")])) == "{\"{x}\"}")
@@ -211,7 +203,6 @@ import Time_Primitive
         #expect(try await boundPayload(.array([.text("back\\slash")])) == "{\"back\\\\slash\"}")
     }
 
-    /// `bytea` renders as `\xdeadbeef`, whose backslash must survive quoting.
     @Test func `escapes the bytea prefix backslash`() async throws {
         #expect(try await boundPayload(.array([.blob([0xde, 0xad])])) == "{\"\\\\xdead\"}")
     }
